@@ -103,6 +103,22 @@ def array(items):
     return {"type": "array", "items": items}
 
 
+def failure_reason(stderr):
+    # Only these fixed descriptions can reach Actions logs. CLI output may include input data.
+    for pattern, reason in (
+        (rb"certificate|unknownissuer", "TLS certificate verification failed"),
+        (rb"401 unauthorized|invalid_grant|refresh_token_reused", "CI login was rejected"),
+        (rb"403 forbidden|access denied|unsupported_country", "upstream access was denied"),
+        (rb"429 too many requests|usage.limit|quota", "upstream usage limit was reached"),
+        (rb"permission denied|read-only file system", "runner filesystem access failed"),
+        (rb"invalid schema|invalid_json_schema", "output schema was rejected"),
+        (rb"timed out|connection|error sending request|stream disconnected", "upstream connection failed"),
+    ):
+        if re.search(pattern, stderr, re.IGNORECASE):
+            return reason
+    return "check the CI login, quota and pinned CLI"
+
+
 def ask(task, data, schema):
     # This container gets no checkout, Actions environment, Docker socket, or GitHub token.
     # No command execution is needed: Codex returns structured decisions and exact text edits.
@@ -128,12 +144,14 @@ def ask(task, data, schema):
         args += ["--output-schema", "/result/schema.json", "-o", "/result/answer.json", "-"]
         try:
             result = subprocess.run(args, input=instructions.encode(), stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL, timeout=720)
+                                    stderr=subprocess.PIPE, timeout=720)
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError(f"Codex timed out: {failure_reason(error.stderr or b'')}") from None
         finally:
             # A timed-out docker client can leave a container rotating the credential.
             subprocess.run(["docker", "rm", "-f", container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if result.returncode:
-            raise RuntimeError(f"Codex exited {result.returncode}. Verify the CI login, quota and pinned CLI.")
+            raise RuntimeError(f"Codex exited {result.returncode}: {failure_reason(result.stderr)}")
         return json.loads((path / "answer.json").read_text())
 
 
