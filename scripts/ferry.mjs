@@ -24,6 +24,7 @@ const usage = `Usage:
   ferry web [--port 8787]
   ferry host [--port 8788]
   ferry pair
+  ferry import-pin < session.json
 
 --bind IP       Override the listen address. Standalone services auto-select a private IP. all and --origin default to loopback.
 --origin URL    Browser-facing Web origin, for example https://ferry.example.com.
@@ -40,10 +41,10 @@ function options() {
   });
   if (values.help) { console.log(usage); process.exit(0); }
   const mode = positionals[0] ?? 'all';
-  if (positionals.length > 1 || !['all', 'web', 'host', 'pair'].includes(mode)) throw Error(usage);
+  if (positionals.length > 1 || !['all', 'web', 'host', 'pair', 'import-pin'].includes(mode)) throw Error(usage);
   const allowed = {
     all: ['web-port', 'host-port', 'bind', 'origin', 'foreground'],
-    web: ['port', 'bind', 'origin', 'foreground'], host: ['port', 'bind', 'foreground'], pair: [],
+    web: ['port', 'bind', 'origin', 'foreground'], host: ['port', 'bind', 'foreground'], pair: [], 'import-pin': [],
   };
   for (const key of Object.keys(values)) {
     if (!allowed[mode].includes(key)) throw Error('Unsupported option for ' + mode + ': --' + key + '\n' + usage);
@@ -171,7 +172,16 @@ async function launch() {
 try {
   const config = options();
   await mkdir(state, { recursive: true, mode: 0o700 });
-  if (config.mode === 'pair') console.log('Pairing code: ' + await issuePairingCode(join(state, 'host')));
+  if (config.mode === 'import-pin') {
+    if (process.stdin.isTTY) throw Error('Pipe one JSON session record into ferry import-pin.');
+    const { importPin } = await import('../src/import-pins.mjs');
+    const chunks = [];
+    for await (const chunk of process.stdin) chunks.push(chunk);
+    let pin;
+    try { pin = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+    catch { throw Error('Invalid session JSON on stdin.'); }
+    console.log(await importPin(join(process.env.FERRY_HOST_DATA || join(state, 'host'), 'sessions.sqlite'), pin));
+  } else if (config.mode === 'pair') console.log('Pairing code: ' + await issuePairingCode(join(state, 'host')));
   else if (config.foreground) await supervise(config);
   else await launch();
 } catch (error) {

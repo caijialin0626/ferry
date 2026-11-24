@@ -117,3 +117,15 @@ Contributions are welcome, especially adapter updates for new CLI releases and n
 ## License
 
 [MIT](../LICENSE)
+
+## Import pinned chats
+
+After starting `all` or `host`, run these steps on each execution host as the account that owns the native CLI sessions.
+
+1. Read explicit pins from the installed client's local index or session picker. Match each pin to its resumable native ID and original working directory. For Codex, check `threads.is_pinned` in the active state database, or match legacy `pinned-thread-ids` in `.codex-global-state.json` to local threads. For Claude Code, check whether the installed version exposes a pin flag in `claude agents --all --json`. For Antigravity, match the client's pinned list to locally resumable CLI sessions. Skip archived, cloud-only or unverified entries. Recency alone does not indicate a pin.
+2. Use a local script to pipe one JSON object per invocation into `npx --yes github:caijialin0626/ferry#main import-pin`. Replace the example with the actual record. Use `codex`, `claude` or `agy` for the agent. Extract visible user and assistant text in conversation order. If text cannot be exported, omit `messages` to import a sidebar entry with no prior text. Ferry resumes using the original ID and directory. For a manually configured host, pass its `FERRY_HOST_DATA` to the command.
+3. Refresh the host's sidebar, check the titles under **Pinned**, and open a chat to verify the imported history. Report the count and any skipped sources. Source records stay on the execution host. Repeating the import reuses the existing entry.
+
+```json
+{"pinned":true,"agent":"claude","nativeId":"ab108430-e36b-44e1-8ce3-b4677e665859","cwd":"/work/field-notes","title":"Offline search","messages":[{"role":"user","text":"Where does the index go?"},{"role":"agent","text":"In the project data directory."}]}
+```

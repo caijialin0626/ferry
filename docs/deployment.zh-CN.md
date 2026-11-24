@@ -117,3 +117,15 @@ npm test        # 集成测试，使用模拟的 Agent CLI，不需要任何账�
 ## 许可证
 
 [MIT](../LICENSE)
+
+## 导入置顶会话
+
+部署 Agent 在 `all` 或 `host` 启动后，用运行 CLI 的同一账户完成以下步骤。分开部署时，在每台执行机分别操作。
+
+1. 从已安装客户端的本地索引或会话列表读取**明确标为置顶**的条目，核对原生会话 ID 和原工作目录。Codex 可检查当前状态库的 `threads.is_pinned`，旧版可从 `.codex-global-state.json` 的 `pinned-thread-ids` 对照本地线程。Claude Code 可查看当前版本的 `claude agents --all --json` 是否提供置顶标记。Antigravity 可从客户端的置顶列表核对本地 CLI 可恢复的会话。跳过已归档、只能在云端打开、或无法确认置顶的条目；「最近使用」列表不能代替置顶列表。
+2. 用本地脚本为每条会话生成下面格式的 JSON，通过标准输入交给 `npx --yes github:caijialin0626/ferry#main import-pin`。将示例换成原始数据，`agent` 取 `codex`、`claude` 或 `agy`。按原顺序提取可见的用户文本和助手回复；无法导出文本时可省略 `messages`，首次打开时只显示会话入口。原生 ID 和目录用于继续原对话。手动配置的执行机须给导入命令传入同一个 `FERRY_HOST_DATA`。
+3. 刷新对应执行机的侧栏，核对「置顶」里的标题，打开会话检查已导入的历史。向用户报告导入数量和跳过原因。原始记录留在执行机上，重复导入同一会话会复用原条目。
+
+```json
+{"pinned":true,"agent":"claude","nativeId":"ab108430-e36b-44e1-8ce3-b4677e665859","cwd":"/work/field-notes","title":"离线搜索","messages":[{"role":"user","text":"索引放在哪里？"},{"role":"agent","text":"放在项目的数据目录。"}]}
+```

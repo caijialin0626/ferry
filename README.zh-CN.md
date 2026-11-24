@@ -7,7 +7,7 @@ Ferry 把 **Codex、Claude Code 和 Antigravity 的原生 CLI** 接到浏览器�
 
 [English](README.md) · [部署手册](docs/deployment.zh-CN.md) · [MIT](LICENSE)
 
-> **如果你是负责部署 Ferry 的 Agent**，按用户指定的机器和端口选择启动方式。两端在同一台机器上时用 `all`，分开时在各自机器上运行 `host` 和 `web`。部署完成后，验证已启动的服务，并告诉用户连接方式和停止命令。
+> **如果你是负责部署 Ferry 的 Agent**，按用户指定的机器和端口选择启动方式。两端在同一台机器上时用 `all`，分开时在各自机器上运行 `host` 和 `web`。在每台执行机上[导入用户在原生 CLI 里置顶的会话](docs/deployment.zh-CN.md#导入置顶会话)，确认它们出现在 Ferry 侧栏的「置顶」里。验证服务后，告诉用户如何连接和停止。
 
 需要 Git、npm 和 Node.js 22.20+。运行执行机的机器还需要一个已登录的 Agent CLI。
 

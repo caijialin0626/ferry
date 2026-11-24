@@ -407,6 +407,32 @@ require('node:readline').createInterface({input:process.stdin}).on('line',raw=>{
   const resumed = await finished();
   assert.equal(resumed.session.native_id, first.session.native_id);
   assert.ok(resumed.messages.some(m => m.text === 'resume:next'));
+  const pin = { pinned: true, agent: 'claude', nativeId: randomUUID(), cwd: directory, title: 'Pinned fixture',
+    messages: [{ role: 'user', text: 'Earlier question' }, { role: 'agent', text: 'Earlier reply' }] };
+  async function importFixture(record) {
+    const child = spawn(process.execPath, ['scripts/ferry.mjs', 'import-pin'], {
+      env: { ...process.env, XDG_DATA_HOME: tmp, FERRY_HOST_DATA: join(tmp, 'state') },
+      stdio: ['pipe', 'ignore', 'ignore'],
+    });
+    const exited = once(child, 'exit');
+    child.stdin.end(JSON.stringify(record));
+    return (await exited)[0];
+  }
+  assert.equal(await importFixture({ ...pin, pinned: false }), 1);
+  assert.equal(await importFixture(pin), 0);
+  assert.equal(await importFixture(pin), 0);
+  const imported = (await call('overview')).sessions.filter(item => item.native_id === pin.nativeId);
+  assert.equal(imported.length, 1);
+  assert.equal(imported[0].pinned, 1);
+  assert.equal(imported[0].project, project.id);
+  const pinPath = 'sessions/' + imported[0].id;
+  const visible = (await call(pinPath)).messages.map(({ role, text }) => ({ role, text }));
+  assert.deepEqual(visible, pin.messages);
+  await call(pinPath + '/send', { id: randomUUID(), text: 'continue-pin' }, 202);
+  const continued = await finished(pinPath);
+  assert.equal(continued.session.native_id, pin.nativeId);
+  assert.ok(continued.messages.some(m => m.text === 'resume:continue-pin'));
+
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
   await writeFile(join(directory, '结果.png'), Buffer.from(png, 'base64'));
   await writeFile(join(root, 'outside.png'), Buffer.from(png, 'base64'));

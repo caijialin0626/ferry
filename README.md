@@ -7,7 +7,7 @@ Ferry brings the **native Codex, Claude Code, and Antigravity CLIs** to your bro
 
 [简体中文](README.zh-CN.md) · [Deployment guide](docs/deployment.md) · [MIT](LICENSE)
 
-> **If you’re an agent deploying Ferry**, use the machines and ports the user requested. Run `all` on one machine, or run `host` and `web` on their respective machines. Verify each service you started and tell the user how to connect and stop it.
+> **If you’re an agent deploying Ferry**, use the machines and ports the user requested. Run `all` on one machine, or run `host` and `web` on their respective machines. On each execution host, [import the user’s pinned native chats](docs/deployment.md#import-pinned-chats) and check that they appear under **Pinned** in Ferry. Verify the services and tell the user how to connect and stop them.
 
 Install Git, npm, and Node.js 22.20+ on each machine. The execution host also needs a signed-in agent CLI.
 
