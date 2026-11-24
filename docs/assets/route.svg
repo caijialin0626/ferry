@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 256" width="960" height="256" role="img" aria-labelledby="title desc">
+  <title id="title">Ferry connection map</title>
+  <desc id="desc">A browser connects through the Ferry Web relay to an execution host with native agent CLIs and SQLite.</desc>
+  <defs>
+    <linearGradient id="ocean" x2="1" y2="0.4" gradientUnits="objectBoundingBox">
+      <stop stop-color="#102627"/><stop offset="1" stop-color="#183c3c"/>
+    </linearGradient>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.9" fill="#a8d9be" opacity=".18"/>
+    </pattern>
+    <clipPath id="map"><rect width="960" height="256" rx="16"/></clipPath>
+    <path id="contour" d="M-100 147C35 143 6 68 124 70S269 23 249-44"/>
+    <path id="coast" d="M688 310c23-56 61-32 113-58s32-73 100-79 77-52 123-86"/>
+  </defs>
+  <rect width="960" height="256" rx="16" fill="url(#ocean)"/>
+  <rect width="960" height="256" rx="16" fill="url(#grid)"/>
+  <g clip-path="url(#map)" fill="none" stroke="#77ad97" opacity=".17">
+    <use href="#contour"/><use href="#contour" y="-10"/><use href="#contour" y="-20"/><use href="#contour" y="-30"/><use href="#contour" y="-41"/>
+    <use href="#coast"/><use href="#coast" y="10"/><use href="#coast" y="20"/><use href="#coast" y="30"/><use href="#coast" y="40"/>
+  </g>
+  <g fill="none" stroke="#a6ecd4">
+    <path d="M211 110H375Q389 110 399 102L420 87Q431 80 445 80H476M488 80H518Q530 80 542 89L560 102Q572 110 584 110H749" stroke-width="2" stroke-dasharray="3 6" stroke-linecap="round"/>
+    <g transform="translate(123 78)" stroke-width="3" stroke-linejoin="round">
+      <rect x="2" y="3" width="67" height="47" rx="5" fill="#152f30"/><path d="M3 14h65M25 58h20m-10-8v8"/>
+      <rect x="55" y="25" width="23" height="40" rx="4" fill="#152f30"/><path d="M63 59h7"/>
+    </g>
+    <g transform="translate(443 54)">
+      <rect width="74" height="74" rx="19" fill="#a6ecd4" stroke="none"/>
+      <g fill="none" stroke="#133333" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">
+        <path d="m27 17 10 7-10 7m-12 9h44l-8 10H17z"/><path d="M16 58q5-4 10 0t10 0 10 0 10 0"/>
+      </g>
+    </g>
+    <g transform="translate(759 79)" stroke-width="3" stroke-linejoin="round">
+      <rect x="2" y="3" width="73" height="51" rx="5" fill="#152f30"/>
+      <path d="m17 18 9 8-9 8m17 0h11M3 45h71m-62 16h54" stroke-linecap="round"/>
+    </g>
+    <g fill="#a6ecd4" stroke="none"><circle cx="211" cy="110" r="3"/><circle cx="749" cy="110" r="3"/></g>
+  </g>
+  <g font-family="Inter, Helvetica, Arial, sans-serif" text-anchor="middle">
+    <g font-size="28" font-weight="600" fill="#f1f5e9">
+      <text x="160" y="185">Browser</text><text x="480" y="170">Ferry Web</text><text x="796" y="185">Host</text>
+    </g>
+    <g font-size="17" fill="#a6c5b9">
+      <text x="160" y="210">Desktop or phone</text><text x="480" y="195">Sign-in &amp; relay</text><text x="796" y="210">Agent CLI · SQLite</text>
+    </g>
+  </g>
+</svg>

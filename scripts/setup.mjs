@@ -20,13 +20,13 @@ function write(name, lines) {
 }
 
 const hostCreated = write('host.env', [
-  '# Execution host. See README for every option.',
+  '# Execution host. See docs/deployment.md for configuration.',
   'FERRY_HOST_TOKEN=' + hostToken,
   'FERRY_HOST_BIND=127.0.0.1',
   'FERRY_HOST_PORT=8788',
 ]);
 const webCreated = write('web.env', [
-  '# Web service. See README for every option.',
+  '# Web service. See docs/deployment.md for configuration.',
   'FERRY_WEB_LOGIN_TOKEN=' + accessCode,
   'FERRY_WEB_BIND=127.0.0.1',
   'FERRY_WEB_PORT=8787',

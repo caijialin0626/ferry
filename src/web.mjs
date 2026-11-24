@@ -253,4 +253,7 @@ const server = createServer(async (req, res) => {
   }
 });
 server.on('error', error => { console.error(error.message); process.exitCode = 1; });
-server.listen(port, bind, () => console.log('Web listening on ' + origin));
+server.listen(port, bind, () => {
+  console.log('Web listening on ' + origin);
+  process.send?.('ready');
+});

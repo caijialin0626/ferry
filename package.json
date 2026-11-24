@@ -14,7 +14,8 @@
     "pair": "node --env-file-if-exists=host.env src/pair.mjs",
     "web": "node --env-file-if-exists=web.env src/web.mjs",
     "test": "node --test",
-    "check": "node --check public/app.js && node --check public/i18n.js && node --check public/select-menu.js && node --check public/notifications.js && for f in src/*.mjs; do node --check \"$f\" || exit 1; done && node --check scripts/setup.mjs"
+    "check": "node --check public/app.js && node --check public/i18n.js && node --check public/select-menu.js && node --check public/notifications.js && for f in src/*.mjs; do node --check \"$f\" || exit 1; done && node --check scripts/setup.mjs && node --check scripts/ferry.mjs",
+    "start": "node scripts/ferry.mjs --foreground"
   },
   "dependencies": {
     "ws": "8.23.0"
@@ -22,5 +23,13 @@
   "optionalDependencies": {
     "@lydell/node-pty": "1.2.0-beta.18",
     "@xterm/headless": "6.0.0"
-  }
+  },
+  "bin": {
+    "ferry": "scripts/ferry.mjs"
+  },
+  "files": [
+    "src",
+    "public",
+    "scripts/ferry.mjs"
+  ]
 }

@@ -57,12 +57,15 @@ async function changeState(connection, session, state) {
   await record(connection, session, 'state', { state });
 }
 
-for (const { id } of (await db.query("SELECT id FROM sessions WHERE state IN ('running','stopping')")).rows) {
-  await withTransaction(db, async client => {
-    await addMessage(client, id, 'restart-' + randomUUID(), 'notice', 'The execution host restarted. Check the previous turn before sending the next message.');
-    await changeState(client, id, 'interrupted');
-  });
+async function recoverInterruptedTurns() {
+  for (const { id } of (await db.query("SELECT id FROM sessions WHERE state IN ('running','stopping')")).rows) {
+    await withTransaction(db, async client => {
+      await addMessage(client, id, 'restart-' + randomUUID(), 'notice', 'The execution host restarted. Check the previous turn before sending the next message.');
+      await changeState(client, id, 'interrupted');
+    });
+  }
 }
+let recovered;
 
 function turnStatus(run) {
   const waitingForAnswer = run?.questions && Array.from(run.questions.values()).some(question => question.blocking);
@@ -477,6 +480,7 @@ const activeTasks = new Set();
 const server = createServer(async (req, res) => {
   let temporaryVideo;
   try {
+    await recovered;
     const { pathname, searchParams } = new URL(req.url, 'http://localhost');
     if (req.method === 'POST' && pathname === '/api/pair/redeem') {
       return json(res, 200, { ...await pairing.redeem(req), ...machineIdentity() });
@@ -790,7 +794,9 @@ const server = createServer(async (req, res) => {
 });
 server.on('error', error => { console.error(error.message); process.exitCode = 1; });
 let stopScheduler;
-server.listen(port, bind, () => {
+server.listen(port, bind, async () => {
+  recovered = recoverInterruptedTurns();
+  await recovered;
   const address = server.address();
   const local = address.address === '0.0.0.0' ? '127.0.0.1' : address.address === '::' ? '[::1]'
     : address.family === 'IPv6' ? '[' + address.address + ']' : address.address;
@@ -806,6 +812,7 @@ server.listen(port, bind, () => {
     return true;
   });
   console.log('Agent Host listening on ' + bind + ':' + port);
+  process.send?.('ready');
 });
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
   server.close();
