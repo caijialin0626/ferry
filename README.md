@@ -7,19 +7,17 @@ Use **Codex, Claude Code, and Antigravity** from a browser on your phone or desk
 
 [简体中文](README.zh-CN.md) · [Deployment guide](docs/deployment.md) · [MIT](LICENSE)
 
-**Give this to your agent**
+> **If you’re an agent deploying Ferry**, check the requirements below and run the quick-start command. Sign in with the generated access code and verify that the local host is online. Give the user the URL, the path to the access code, and the command to stop Ferry.
 
-> Deploy https://github.com/caijialin0626/ferry on this machine using the single-machine quick start. Verify the sign-in page and the execution host are reachable. Tell me the URL, where to read the access code, and how to stop Ferry.
-
-![A browser connects to Ferry Web, which relays requests to the execution host. The host runs the native agent CLI and stores chat history in SQLite.](docs/assets/route.svg)
-
-Or start it yourself with Git, npm, Node.js 22.20+, and one signed-in agent CLI.
+The single-machine quick start requires Git, npm, Node.js 22.20+, and one signed-in agent CLI.
 
 ```sh
 npx --yes github:caijialin0626/ferry#main
 ```
 
 Open <http://127.0.0.1:8787> and read the access code from the file shown in your terminal. Both services run in the background, so you can close the terminal.
+
+![A browser connects to Ferry Web, which relays requests to the execution host. The host runs the native agent CLI and stores chat history in SQLite.](docs/assets/route.svg)
 
 ## Pick up where you left off
 

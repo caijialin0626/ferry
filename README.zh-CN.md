@@ -7,19 +7,17 @@
 
 [English](README.md) · [部署手册](docs/deployment.zh-CN.md) · [MIT](LICENSE)
 
-**复制这段话给你的 Agent**
+> **如果你是负责部署 Ferry 的 Agent**，请先检查下方的运行要求，再执行启动命令。用生成的访问码登录，确认本机执行机显示在线后，把访问地址、访问码文件路径和停止命令告诉用户。
 
-> 请在这台机器上部署 https://github.com/caijialin0626/ferry 。按 README 的单机方式启动，确认登录页能打开、执行机在线，然后告诉我访问地址、在哪里读取访问码，以及怎样停止服务。
-
-![浏览器连到 Ferry Web，由它将请求转发给运行 Agent CLI 的执行机。对话保存在执行机的 SQLite 中。](docs/assets/route.svg)
-
-也可以自己运行。需要 Git、npm、Node.js 22.20+，以及一个已登录的 Agent CLI。
+单机部署需要 Git、npm、Node.js 22.20+，以及一个已登录的 Agent CLI。
 
 ```sh
 npx --yes github:caijialin0626/ferry#main
 ```
 
 打开 <http://127.0.0.1:8787>，按终端提示读取访问码。两个服务在后台运行，可以关掉终端。
+
+![浏览器连到 Ferry Web，由它将请求转发给运行 Agent CLI 的执行机。对话保存在执行机的 SQLite 中。](docs/assets/route.svg)
 
 ## 从手机接着做什么？
 
