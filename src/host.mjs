@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { createReadStream, mkdirSync } from 'node:fs';
 import { open, realpath, stat, readdir, unlink } from 'node:fs/promises';
+import { DatabaseSync } from 'node:sqlite';
 import { pipeline } from 'node:stream/promises';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import { homedir, hostname } from 'node:os';
@@ -24,6 +25,15 @@ const home = await realpath(homedir());
 const recentWorkspace = join(data, 'independent');
 const videoDirectory = resolve(data, 'video-attachments');
 mkdirSync(data, { recursive: true, mode: 0o700 });
+// Different listen ports can still point at the same chat history and scheduler.
+const hostLock = new DatabaseSync(join(data, 'host-lock.sqlite'));
+try {
+  hostLock.exec('BEGIN EXCLUSIVE');
+} catch (error) {
+  if (error.errcode === 5) throw Error('A Ferry host is already using ' + data);
+  throw error;
+}
+process.once('exit', () => hostLock.close());
 mkdirSync(recentWorkspace, { mode: 0o700, recursive: true });
 const pairing = await openPairing(data);
 const db = openDatabase(join(data, 'sessions.sqlite'));

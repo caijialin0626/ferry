@@ -22,6 +22,12 @@ ssh -N -L 127.0.0.1:8787:127.0.0.1:8787 user@machine
 
 ## 跨机器部署
 
+使用[首页的独立启动命令](../README.zh-CN.md)：在装有 CLI 的机器运行 `host`，在提供网页的机器运行 `web`。用 `--port` 选端口，`--bind` 选本机监听 IP。Web 在 HTTPS 反向代理后面时，用 `--origin https://ferry.example.com` 指定浏览器使用的地址。
+
+执行机启动时会打印 10 分钟内有效的单次配对码。如果过期，在执行机上运行 `npx --yes github:caijialin0626/ferry#main pair` 即可重新生成。两端都支持 `--foreground`，供进程管理器使用。
+
+### 使用 Docker 或手动配置
+
 以下命令在仓库根目录运行。将示例中的占位密钥替换为随机值（可用 `openssl rand -hex 32` 生成）。
 
 **Web 服务**可以部署在任意服务器上；每台装有 Agent CLI 的机器上运行一个**执行机**。两者之间可以走 Tailscale、WireGuard、局域网等私有网络，也可以在前面加一层 HTTPS。

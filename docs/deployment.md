@@ -22,6 +22,12 @@ Open <http://127.0.0.1:8787> in the client browser. On a phone, configure the sa
 
 ## Separate machines
 
+Use the [standalone commands in the README](../README.md). Run `host` where the CLIs are installed and `web` on the machine serving the browser. Use `--port` to select the port and `--bind` to select a local IP. When Web runs behind an HTTPS reverse proxy, set the browser address with `--origin https://ferry.example.com`.
+
+The host prints a single-use pairing code valid for ten minutes. To get a fresh code, run `npx --yes github:caijialin0626/ferry#main pair` on the host. Both roles accept `--foreground` for process managers.
+
+### Docker or manual configuration
+
 Run the following commands from the repository root. Replace the example secrets with random values generated with `openssl rand -hex 32`.
 
 Run the **Web service** on any server and an **execution host** on every machine that has agent CLIs. Connect them over a private network such as Tailscale, WireGuard or your LAN, or put HTTPS in front.
