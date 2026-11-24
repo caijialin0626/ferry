@@ -52,10 +52,14 @@ In this sample Field Notes project, the sidebar lists projects and chats alongsi
 
 ## Design principles
 
-- **Quick to use, quick to change.** Start with one command and switch chats with `⌘K` or `Ctrl+K`. Small CLI adapters make upstream changes easier to follow. The [issue workflow](.github/maintenance/README.md) can triage reports and prepare tested fixes. Issues suited to automated handling receive development, testing, and merge status updates on the original issue, with links to the corresponding PR or run. We’re also exploring automated upstream CLI updates.
+- **Quick to use, quick to change.** Start with one command and switch chats with `⌘K` or `Ctrl+K`. Small CLI adapters make upstream changes easier to follow. We’re also exploring automated upstream CLI updates.
 - **Carry the native harness.** Ferry forwards instructions through the Codex App Server and the other CLIs’ native `stream-json` interfaces without adding a system prompt.
 - **Remote from the start.** Web handles sign-in and relays requests. Each host runs its agents and keeps its chat history. Deploy both on one machine or put them on separate machines.
 
 ![A browser connects to Ferry Web, which relays requests to the execution host. The host runs the native agent CLI and stores chat history in SQLite.](docs/assets/route.svg)
 
 The combined command binds to loopback by default. For phone access or multiple machines, see the [remote deployment guide](docs/deployment.md#connect-from-another-device). Anyone who can sign in can run commands on the host without per-action approval.
+
+## Automated issue handling
+
+When you open an issue, describe the behavior you expect and include steps to reproduce any bug. Codex triages new issues in GitHub Actions, implements fixes it can handle, and opens a PR. The workflow merges the change after independent review and end-to-end tests pass. Follow the original issue for progress, the PR link, and the merge result. [Workflow details](.github/maintenance/README.md)

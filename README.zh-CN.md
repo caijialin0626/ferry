@@ -52,10 +52,14 @@ npx --yes github:caijialin0626/ferry#main web --port 8787
 
 ## 设计理念
 
-- **用起来快，迭代也快。** 一条命令启动，`⌘K` 或 `Ctrl+K` 切换对话。每个 CLI 的适配器都很薄，方便跟进上游变化。仓库提供 [issue 自动处理工作流](.github/maintenance/README.md)，由 Codex 分诊、修改和验证；适合自动处理的 issue 会在原 issue 中收到开发、测试和合入状态，并可打开对应的 PR 或运行记录；后续还会考虑自动跟进 Agent CLI 更新。
+- **用起来快，迭代也快。** 一条命令启动，`⌘K` 或 `Ctrl+K` 切换对话。每个 CLI 的适配器都很薄，方便跟进上游变化。后续也会考虑自动跟进 Agent CLI 更新。
 - **做 harness 的搬运工。** Ferry 通过 Codex App Server、Claude Code 和 Antigravity 的 `stream-json` 接口转发指令，不额外叠加系统提示词。
 - **从一开始就支持远程。** Web 端负责登录和转发，执行机负责运行 Agent 和保存对话。两端可以在同一台机器上启动，也可以各自部署。
 
 ![浏览器连到 Ferry Web，由它将请求转发给运行 Agent CLI 的执行机。对话保存在执行机的 SQLite 中。](docs/assets/route.svg)
 
 单机入口默认只允许本机访问。要从手机连接或部署多台机器，请看[远程部署](docs/deployment.zh-CN.md#从另一台设备登录)。能登录的人可以在执行机上运行命令，Agent 执行操作时不会逐项请求批准。
+
+## Issue 自动处理
+
+提交 issue 时请写清预期行为，报告 bug 时也请附上复现步骤。GitHub Actions 会让 Codex 筛选新 issue，为适合自动处理的问题编写修复并创建 PR。独立审查和端到端测试均通过后，工作流会自动合入。开发进度、PR 链接和合入结果都能在原 issue 里看到。[查看工作流说明](.github/maintenance/README.md)
