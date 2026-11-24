@@ -1604,7 +1604,7 @@ function flush(now) {
 function makeEntry(message) {
   return {
     id: message.id, role: message.role, text: message.text || '',
-    createdAt: message.created_at,
+    createdAt: message.created_at, updatedAt: message.updated_at,
     replyOffset: Number.isSafeInteger(message.reply_offset) ? message.reply_offset : null,
     images: Array.isArray(message.images) ? message.images : [],
   };
@@ -2023,10 +2023,13 @@ function drawTurn(turn) {
   const hasNotice = turn.extras.some(entry => entry.role === 'notice');
   turn.replyText = text;
   if (lastReply >= 0) {
-    const createdAt = turn.flow.find(entry => entry.role === 'agent' && entry.text.trim())?.createdAt;
-    if (turn.timeValue !== createdAt) {
-      turn.timeValue = createdAt;
-      turn.time = messageTime(createdAt, t('Replied'));
+    const reply = turn.flow.findLast(entry => entry.role === 'agent' && entry.text.trim());
+    let repliedAt = reply.updatedAt ?? reply.createdAt;
+    // Old hosts saved only the start time. Don't repeat it under text written after later guidance.
+    if (groups.some(({ offset, steer }) => steer?.createdAt > repliedAt && text.slice(offset).trim())) repliedAt = undefined;
+    if (turn.timeValue !== repliedAt) {
+      turn.timeValue = repliedAt;
+      turn.time = messageTime(repliedAt, t('Replied'));
     }
     const actions = [];
     if (!unfinished && !revealing && !hasNotice) actions.push(turn.copy);
@@ -2681,8 +2684,10 @@ function watchSession(id, target, revision, cursor) {
     if (event.type === 'message') addMessage(event.payload);
     else if (event.type === 'delta') {
       const entry = rendered.get(event.payload.id);
-      if (entry?.role === 'agent' && event.payload.text) reveals.set(entry, (reveals.get(entry) || '') + event.payload.text);
-      else if (entry) { entry.text += event.payload.text || ''; entry.dirty = true; pending.add(entry.turn); }
+      if (entry?.role === 'agent' && event.payload.text) {
+        entry.updatedAt = event.payload.updated_at;
+        reveals.set(entry, (reveals.get(entry) || '') + event.payload.text);
+      } else if (entry) { entry.text += event.payload.text || ''; entry.dirty = true; pending.add(entry.turn); }
     } else if (event.type === 'state') {
       ++stateEvent;
       if (isRunning(session) && resultLabel[event.payload.state] && isViewingSession()) {

@@ -27,7 +27,12 @@ else {
   process.stdin.on('end', () => {
     const text = JSON.parse(input).message.content;
     console.log(JSON.stringify({event:'init',conversation_id:'demo',init:{permission_mode:'always-proceed'}}));
-    console.log(JSON.stringify({event:'result',result:{conversation_id:'demo',status:'SUCCESS',response:'Browser reply: ' + text}}));
+    const output = text_delta => console.log(JSON.stringify({event:'step_update',step_update:{step_type:'agent_response',text_delta}}));
+    output('Browser reply: ');
+    setTimeout(() => {
+      output(text);
+      console.log(JSON.stringify({event:'result',result:{conversation_id:'demo',status:'SUCCESS'}}));
+    }, 150);
   });
 }`, { mode: 0o700 });
     function start(name, settings) {
@@ -75,8 +80,24 @@ else {
     await page.locator('#send').click();
     const reply = page.locator('#messages').getByText('Browser reply: hello from the browser', { exact: true });
     await reply.waitFor();
+    const sessionId = new URL(page.url()).searchParams.get('session');
+    const historyUrl = url + '/api/sessions/' + sessionId;
+    const snapshot = await (await page.request.get(historyUrl)).json();
+    const agent = snapshot.messages.find(message => message.role === 'agent');
+    if (!(agent.updated_at > agent.created_at)) throw new Error('Later output must advance the reply time');
+    const latestTime = page.locator('.reply-meta time[datetime="' + new Date(agent.updated_at).toISOString() + '"]');
+    await latestTime.waitFor();
     await page.reload();
     await reply.waitFor();
+    await latestTime.waitFor();
+    // Older hosts only know when output began, even if more text followed a steer.
+    await page.route(historyUrl, route => route.fulfill({ json: { ...snapshot, messages: [
+      { ...agent, text: 'First. Second.', updated_at: null },
+      { id: 'fixture-steer', role: 'steer', text: 'Continue', reply_offset: 6, created_at: agent.created_at + 60000 },
+    ] } }));
+    await page.reload();
+    await page.getByText('Second.', { exact: true }).waitFor();
+    if (await page.locator('.reply-meta time').count()) throw new Error('Legacy reply time precedes guidance');
     await appearance('dark');
     console.log('Browser login, chat, native reply and persisted history passed.');
   } finally {
