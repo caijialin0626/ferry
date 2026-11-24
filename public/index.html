@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#fbfbfa">
+  <title>Ferry</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/vendor/markdown-it.min.js"></script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <p id="connection-status" class="connection-status" role="status" hidden></p>
+  <section id="login" class="login" hidden>
+    <form id="login-form" class="login-card">
+      <img class="brand-icon" src="/icon.svg" alt="">
+      <h1>Sign in to Ferry</h1>
+      <label for="login-code">Access code</label>
+      <input id="login-code" type="password" name="code" autocomplete="current-password" required>
+      <button class="btn primary" type="submit">Sign in</button>
+      <p id="login-error" class="error" role="status"></p>
+    </form>
+  </section>
+  <section id="tailnet-required" class="login" hidden>
+    <div class="login-card">
+      <img class="brand-icon" src="/icon.svg" alt="">
+      <h1>Connect with Tailscale</h1>
+      <p>Open this workspace with an authorized Tailscale account.</p>
+    </div>
+  </section>
+
+  <div id="app" class="shell" hidden>
+    <aside id="sidebar" class="sidebar" aria-label="Navigation">
+      <div class="side-head">
+        <a class="brand" href="/"><img src="/icon.svg" alt=""><span>Ferry</span></a>
+        <button id="collapse" class="icon-btn" type="button" aria-label="Collapse sidebar" title="Collapse sidebar" aria-controls="sidebar"><span data-icon="sidebar"></span></button>
+      </div>
+      <div class="side-actions">
+        <button id="new-chat" class="side-action" type="button" aria-label="New chat" title="New chat (Ctrl/⌘ + Shift + O)"><span data-icon="compose"></span><span>New chat</span></button>
+        <button id="new-project" class="side-action" type="button" aria-label="New project" title="New project" aria-haspopup="dialog"><span data-icon="folder-plus"></span><span>New project</span></button>
+        <button id="quick-open" class="side-action" type="button" aria-label="Quick switch" aria-haspopup="dialog" hidden><span data-icon="search"></span><span>Quick switch</span></button>
+      </div>
+      <nav id="nav" class="nav" aria-label="Projects and chats"></nav>
+      <div class="machine">
+        <button id="machines-footer" class="machine-status-button" type="button" aria-haspopup="dialog" aria-label="Show machine status">
+          <span id="machine-dot" class="dot" aria-hidden="true"></span>
+          <span class="machine-text"><strong id="machine">Machines</strong><small id="machine-detail">Connecting</small></span>
+        </button>
+        <button id="quota-footer" class="btn quota-shortcut" type="button" aria-haspopup="dialog" aria-controls="quota-dialog" aria-label="Show account quota" title="Show account quota">
+          <span data-icon="gauge"></span><span>Quota</span>
+        </button>
+        <button id="logout" class="icon-btn" type="button" title="Sign out" aria-label="Sign out"><span data-icon="logout"></span></button>
+      </div>
+      <div id="resizer" class="resizer" role="separator" aria-orientation="vertical" aria-controls="sidebar" aria-label="Resize sidebar" title="Drag to resize the sidebar" tabindex="0"></div>
+    </aside>
+    <button id="overlay" class="overlay" type="button" aria-label="Close sidebar" tabindex="-1" hidden></button>
+
+    <main class="main">
+      <header class="topbar">
+        <button id="menu" class="icon-btn menu-btn" type="button" aria-label="Open sidebar" title="Open sidebar"><span data-icon="sidebar"></span></button>
+        <div class="heading"><small id="breadcrumb"></small><h1 id="title">Ferry</h1></div>
+        <div class="top-actions">
+          <button id="origin-session" class="icon-btn" type="button" aria-label="Back to source chat" title="Back to source chat" hidden><span data-icon="arrow-left"></span></button>
+          <button id="branches-open" class="icon-btn" type="button" aria-label="Fork and side chat" title="Fork and side chat" aria-haspopup="dialog" hidden><span data-icon="branch"></span></button>
+          <button id="rename-open" class="icon-btn" type="button" aria-label="Rename chat" title="Rename chat" aria-haspopup="dialog" hidden><span data-icon="edit"></span></button>
+          <button id="pin-session" class="icon-btn" type="button" hidden><span data-icon="pin"></span></button>
+          <button id="archive-session" class="icon-btn" type="button" hidden><span data-icon="archive"></span></button>
+          <button id="schedule-open" class="icon-btn" type="button" aria-label="Scheduled tasks" title="Scheduled tasks" aria-haspopup="dialog" hidden><span data-icon="clock"></span></button>
+          <button id="session-more" class="icon-btn" type="button" aria-label="More chat actions" title="More chat actions" aria-haspopup="dialog" hidden><span data-icon="more"></span></button>
+          <button id="machines-top" class="icon-btn" type="button" aria-label="Show machine status" title="Machine status" aria-haspopup="dialog"><span data-icon="device"></span></button>
+        </div>
+      </header>
+      <p id="error" class="page-error" role="status" hidden></p>
+
+      <section id="empty" class="empty" aria-labelledby="empty-title">
+        <div class="empty-head">
+          <h2 id="empty-title">Start a new chat</h2>
+          <p id="empty-text"></p>
+          <button id="empty-action" class="btn" type="button" hidden><span data-icon="folder-plus"></span><span>New project</span></button>
+        </div>
+      </section>
+
+      <div id="conversation" class="conversation" hidden>
+        <div id="session-loading" class="session-loading" role="status" hidden>
+          <span class="sr-only">Loading chat</span>
+          <div class="thread" aria-hidden="true">
+            <div class="skeleton-turn"><div class="skeleton-user"></div><div class="skeleton-answer"><span></span><span></span><span></span></div></div>
+            <div class="skeleton-turn"><div class="skeleton-user"></div><div class="skeleton-answer"><span></span><span></span><span></span></div></div>
+            <div class="skeleton-turn"><div class="skeleton-user"></div><div class="skeleton-answer"><span></span><span></span><span></span></div></div>
+            <div class="skeleton-turn"><div class="skeleton-user"></div><div class="skeleton-answer"><span></span><span></span><span></span></div></div>
+            <div class="skeleton-turn"><div class="skeleton-user"></div><div class="skeleton-answer"><span></span><span></span><span></span></div></div>
+          </div>
+        </div>
+        <div id="scroll" class="scroll" tabindex="0" aria-label="Chat messages">
+          <div class="thread">
+            <button id="older" class="btn older" type="button" hidden>Load earlier messages</button>
+            <div id="messages" class="messages"></div>
+          </div>
+        </div>
+        <button id="to-bottom" class="to-bottom" type="button" aria-label="Scroll to latest message" title="Scroll to latest message" hidden><span data-icon="arrow-down"></span></button>
+      </div>
+
+      <form id="composer" class="composer" hidden>
+        <div id="archived-banner" class="banner" role="status" hidden>
+          <span data-icon="archive"></span>
+          <p id="archived-text"></p>
+          <button id="restore" class="btn" type="button">Restore</button>
+        </div>
+        <div id="chat-destination" class="chat-destination" hidden>
+          <div class="field-row">
+            <label for="chat-project">Project</label>
+            <select id="chat-project" data-select-label="Project"></select>
+          </div>
+          <div id="chat-machine-field" class="field-row" hidden>
+            <label for="chat-machine">Machine</label>
+            <select id="chat-machine" data-select-label="Machine"></select>
+          </div>
+        </div>
+        <div id="compose-box" class="compose-box">
+          <div id="attachments" class="attachments" role="group" aria-label="Attachments to send" hidden></div>
+          <label for="prompt" class="sr-only">Message</label>
+          <textarea id="prompt" rows="1" placeholder="Describe what you want to get done…" maxlength="32000"></textarea>
+          <input id="file" type="file" accept="image/*,video/mp4,video/quicktime,video/webm,.mov,.mp4,.webm" multiple hidden aria-label="Choose images or a video" tabindex="-1">
+          <div class="compose-actions">
+            <button type="button" id="attach" class="icon-btn attach-btn" aria-label="Add images or a video"><span data-icon="image"></span></button>
+            <div class="pickers" role="group" aria-label="Run settings">
+              <div class="picker" id="agent-picker"><select id="agent" data-select-label="Agent"></select></div>
+              <div class="picker" id="model-picker"><select id="model" data-select-label="Model"></select></div>
+              <div class="picker" id="effort-picker"><select id="effort" data-select-label="Effort"></select></div>
+            </div>
+            <span id="compose-target" class="target"></span>
+            <span id="turn-state" class="turn-state" role="status"></span>
+            <button type="button" id="stop" class="stop-btn" title="Stop this turn" hidden><span data-icon="stop"></span><span>Stop</span></button>
+            <button type="submit" id="send" class="send-btn" aria-label="Send" title="Send (Enter)"><span data-icon="arrow-up"></span></button>
+          </div>
+        </div>
+      </form>
+
+      <section id="starts" class="starts" aria-labelledby="starts-title" hidden>
+        <h3 id="starts-title" hidden>Continue a recent chat</h3>
+        <div id="starts-list" class="starts-list"></div>
+      </section>
+    </main>
+    <aside id="side-panel" class="side-panel" aria-labelledby="side-panel-title" hidden>
+      <header><strong id="side-panel-title">Side chat</strong><button id="side-close" class="icon-btn" type="button" aria-label="Close side chat" title="Close side chat"><span data-icon="x"></span></button></header>
+      <iframe id="side-frame" title="Side chat"></iframe>
+    </aside>
+  </div>
+
+  <dialog id="image-preview" aria-labelledby="image-preview-title">
+    <header class="image-preview-header">
+      <h2 id="image-preview-title">Image preview</h2>
+      <button id="image-preview-close" class="icon-btn" type="button" aria-label="Close image preview" autofocus><span data-icon="x"></span></button>
+    </header>
+    <div id="image-preview-stage">
+      <p id="image-preview-status" role="status" hidden></p>
+      <img id="image-preview-image" alt="" referrerpolicy="no-referrer" hidden>
+    </div>
+  </dialog>
+
+  <dialog id="session-actions-dialog" aria-labelledby="session-actions-title">
+    <div class="dialog-content">
+      <div class="dialog-title">
+        <h2 id="session-actions-title">Chat actions</h2>
+        <button id="session-actions-close" class="icon-btn" type="button" aria-label="Close"><span data-icon="x"></span></button>
+      </div>
+      <div id="session-actions-list" class="branch-actions"></div>
+    </div>
+  </dialog>
+
+  <dialog id="branches-dialog" aria-labelledby="branches-title">
+    <div class="dialog-content">
+      <div class="dialog-title">
+        <h2 id="branches-title">Fork and side chat</h2>
+        <button id="branches-close" class="icon-btn" type="button" aria-label="Close"><span data-icon="x"></span></button>
+      </div>
+      <div class="branch-actions">
+        <button id="branch-side" class="branch-item" type="button"><span data-icon="side-chat"></span><span><strong>New side chat</strong><small>Ask follow-ups in the sidebar with the current context</small></span></button>
+        <button id="branch-fork" class="branch-item" type="button"><span data-icon="branch"></span><span><strong>Fork into a new chat</strong><small>Copy the history and explore another direction</small></span></button>
+      </div>
+      <div id="branch-list" class="branch-list" aria-label="Side chats" hidden></div>
+      <p id="branch-error" role="status" hidden></p>
+    </div>
+  </dialog>
+
+  <dialog id="rename-dialog" aria-labelledby="rename-heading">
+    <form id="rename-form" class="dialog-content" method="dialog">
+      <div class="dialog-title"><h2 id="rename-heading">Rename chat</h2></div>
+      <label class="sr-only" for="rename-title">Chat title</label>
+      <input id="rename-title" type="text" maxlength="120" required autofocus>
+      <p id="rename-error" role="alert" hidden></p>
+      <div class="dialog-footer rename-actions">
+        <button id="rename-cancel" class="btn" type="button">Cancel</button>
+        <button id="rename-save" class="btn primary" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="schedule-dialog" aria-labelledby="schedule-title">
+    <div class="dialog-content">
+      <div class="dialog-title">
+        <h2 id="schedule-title">Scheduled tasks</h2>
+        <button id="schedule-close" class="icon-btn" type="button" aria-label="Close"><span data-icon="x"></span></button>
+      </div>
+      <p id="schedule-context" class="muted"></p>
+      <div id="schedule-list" class="schedule-list" aria-live="polite"></div>
+      <form id="schedule-form">
+        <label for="schedule-prompt">Task</label>
+        <textarea id="schedule-prompt" rows="3" required maxlength="31900" placeholder="What should the agent do when it runs?"></textarea>
+        <div class="schedule-fields">
+          <label>First run<input id="schedule-start" type="datetime-local" required></label>
+          <label>Repeat<select id="schedule-mode" data-select-label="Repeat"><option value="once">Run once</option><option value="repeat">Repeat every N minutes</option></select></label>
+        </div>
+        <div id="schedule-repeat" class="schedule-fields" hidden>
+          <label>Interval (minutes)<input id="schedule-every" type="number" min="1" max="10080" value="10"></label>
+          <label>Until (optional)<input id="schedule-until" type="datetime-local"></label>
+        </div>
+        <div class="dialog-footer">
+          <p id="schedule-error" class="inline-error" role="alert"></p>
+          <button id="schedule-create" class="btn primary" type="submit">Create scheduled task</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="quick-dialog" aria-labelledby="quick-title">
+    <div class="dialog-content">
+      <div class="dialog-title">
+        <h2 id="quick-title">Quick switch</h2>
+        <button type="button" class="icon-btn" id="quick-close" aria-label="Close quick switch"><span data-icon="x"></span></button>
+      </div>
+      <input id="quick-search" type="search" role="combobox" aria-label="Search projects or chats" aria-controls="quick-results"
+        aria-expanded="false" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="Search projects, chats, or machines" autofocus>
+      <div id="quick-results" class="quick-results" role="listbox" aria-label="Projects and chats"></div>
+      <p id="quick-empty" class="quick-empty" role="status" hidden></p>
+    </div>
+  </dialog>
+
+  <dialog id="machines-dialog" aria-labelledby="machines-title">
+    <div class="dialog-content">
+      <div class="dialog-title">
+        <h2 id="machines-title">Machines</h2>
+        <button id="close-machines" class="icon-btn" type="button" aria-label="Close machines"><span data-icon="x"></span></button>
+      </div>
+      <div id="machine-list" class="machine-list" aria-label="Available machines"></div>
+      <div class="notification-setting">
+        <div><strong>Notify when a turn ends</strong><small id="notification-status" aria-live="polite"></small></div>
+        <button id="notification-toggle" class="btn" type="button">Turn on notifications</button>
+      </div>
+      <div class="notification-setting">
+        <label for="language"><strong>Language</strong></label>
+        <select id="language" data-select-label="Language"></select>
+      </div>
+      <div class="dialog-footer">
+        <p id="machine-scan-result" class="machine-scan-result" role="status"></p>
+        <button id="scan-machines" class="btn" type="button"><span data-icon="refresh"></span><span>Rediscover</span></button>
+        <button id="add-machine" class="btn primary" type="button" hidden>Add machine</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="quota-dialog" aria-labelledby="quota-title">
+    <div class="dialog-content">
+      <div class="dialog-title">
+        <h2 id="quota-title">Account quota</h2>
+        <button id="quota-close" class="icon-btn" type="button" aria-label="Close quota"><span data-icon="x"></span></button>
+      </div>
+      <div class="quota-header">
+        <label class="quota-machine-field" for="quota-machine"><span>Machine</span><select id="quota-machine" data-select-label="Machine"></select></label>
+        <button id="quota-refresh" class="btn" type="button"><span data-icon="refresh"></span><span>Refresh quota</span></button>
+      </div>
+      <div id="quota-results" class="quota-results" aria-live="polite"></div>
+    </div>
+  </dialog>
+
+  <dialog id="pair-machine-dialog" aria-labelledby="pair-machine-title">
+    <form id="pair-machine-form" class="dialog-content" method="dialog">
+      <div class="dialog-title">
+        <h2 id="pair-machine-title">Add machine</h2>
+      </div>
+      <p class="pair-machine-hint" data-i18n-html>Run <code>npm run pair</code> on the machine you want to add to get a one-time code.</p>
+      <label for="pair-machine-address">Machine address</label>
+      <input id="pair-machine-address" type="url" maxlength="512" autocomplete="off" autocapitalize="off"
+        spellcheck="false" placeholder="http://my-machine:8788" required autofocus>
+      <label for="pair-machine-code">8-digit code</label>
+      <input id="pair-machine-code" type="text" inputmode="numeric" autocomplete="one-time-code"
+        spellcheck="false" maxlength="24" required>
+      <p id="pair-machine-status" class="pair-machine-hint" role="status"></p>
+      <div class="dialog-footer pair-machine-actions">
+        <button id="cancel-pair-machine" class="btn" type="button">Cancel</button>
+        <button id="confirm-pair-machine" class="btn primary" type="submit">Verify and add</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="folder-dialog" aria-labelledby="folder-title">
+    <form id="folder-form">
+      <div class="dialog-title">
+        <h2 id="folder-title">New project</h2>
+        <button type="button" class="icon-btn" id="close-folder" aria-label="Close"><span data-icon="x"></span></button>
+      </div>
+      <div class="field-row">
+        <label for="folder-machine">Machine</label>
+        <select id="folder-machine" data-select-label="Machine" name="machine"></select>
+      </div>
+      <div id="folder-places" class="places" role="group" aria-label="Places"></div>
+      <label for="folder-path" class="sr-only">Path</label>
+      <div class="path-field">
+        <input id="folder-path" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="Paste or type an absolute path">
+        <button class="btn" type="button" id="browse-path">Go</button>
+      </div>
+      <p id="folder-current" class="folder-current"></p>
+      <div id="folders" class="folders" aria-label="Folders"></div>
+      <div id="folder-pager" class="pager"></div>
+      <div class="dialog-footer">
+        <p id="folder-error" class="error" role="status"></p>
+        <button class="btn" type="button" id="cancel-folder">Cancel</button>
+        <button class="btn primary" type="submit">Create project</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

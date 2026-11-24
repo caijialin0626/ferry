@@ -1,0 +1,24 @@
+# Runs the Web service only. Execution hosts run natively on the machines that have the agent CLIs.
+#   1. Create web.env from web.env.example.
+#   2. docker compose up -d --build
+name: ferry
+services:
+  web:
+    build: .
+    env_file: web.env
+    environment:
+      FERRY_WEB_BIND: 0.0.0.0
+    ports:
+      - 8787:8787
+    # For Tailscale identity mode, replace `ports` with `network_mode: host`
+    # and keep FERRY_WEB_BIND=127.0.0.1 behind `tailscale serve`.
+    read_only: true
+    volumes:
+      - web_data:/var/lib/ferry
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+
+volumes:
+  web_data:

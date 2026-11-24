@@ -1,0 +1,10 @@
+node_modules/
+*.env
+!*.env.example
+.env*
+*.sqlite*
+.DS_Store
+__pycache__/
+# Internal design notes
+技术方案.md
+Claude Code 技术方案评审.md

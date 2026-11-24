@@ -1,0 +1,26 @@
+{
+  "name": "ferry",
+  "version": "0.1.0",
+  "description": "Drive the coding agents on your own machines from any browser. Native harnesses, nothing added.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.20"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "host": "node --env-file-if-exists=host.env src/host.mjs",
+    "pair": "node --env-file-if-exists=host.env src/pair.mjs",
+    "web": "node --env-file-if-exists=web.env src/web.mjs",
+    "test": "node --test",
+    "check": "node --check public/app.js && node --check public/i18n.js && node --check public/select-menu.js && node --check public/notifications.js && for f in src/*.mjs; do node --check \"$f\" || exit 1; done && node --check scripts/setup.mjs"
+  },
+  "dependencies": {
+    "ws": "8.23.0"
+  },
+  "optionalDependencies": {
+    "@lydell/node-pty": "1.2.0-beta.18",
+    "@xterm/headless": "6.0.0"
+  }
+}
