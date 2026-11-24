@@ -261,7 +261,7 @@ def freshness():
         inputs = {"issue": os.environ.get("ISSUE", ""), "mode": os.environ["MODE"]}
         if inputs["mode"] == "upstream":
             inputs["cli"] = os.environ["CLI"]
-        api("actions/workflows/ferry-issues.yml/dispatches", {"ref": os.environ["BRANCH"], "inputs": inputs})
+        api("actions/workflows/ferry-proposals.yml/dispatches", {"ref": os.environ["BRANCH"], "inputs": inputs})
         return
     output("fresh", "yes")
 

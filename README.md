@@ -60,4 +60,4 @@ The combined command binds to loopback by default. For phone access or multiple 
 
 ## Automated issue handling
 
-When you open an issue, describe the behavior you expect and include steps to reproduce any bug. Codex triages new issues in GitHub Actions, implements fixes it can handle, and opens a PR. The workflow merges the change after independent review and end-to-end tests pass. Follow the original issue for progress, the PR link, and the merge result. [Workflow details](.github/maintenance/README.md)
+When you open an issue, describe the behavior you expect and include steps to reproduce any bug. Codex triages new issues in GitHub Actions, implements fixes it can handle, and opens a PR. The workflow posts its automated review and end-to-end test results on the PR and the original issue. A maintainer reviews and merges the PR manually. [Workflow details](.github/maintenance/README.md)
