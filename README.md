@@ -5,8 +5,6 @@
 
 Ferry brings the **native Codex, Claude Code, and Antigravity CLIs** to your browser. Pick up a chat in any browser and the agent keeps working on your machine with the same project instructions, skills, and tools.
 
-**AI-friendly deployment** starts here. An agent can choose one of the three commands below and use the terminal output to sign in or pair a host.
-
 [简体中文](README.zh-CN.md) · [Deployment guide](docs/deployment.md) · [MIT](LICENSE)
 
 > **If you’re an agent deploying Ferry**, use the machines and ports the user requested. Run `all` on one machine, or run `host` and `web` on their respective machines. Verify each service you started and tell the user how to connect and stop it.

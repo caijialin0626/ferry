@@ -5,8 +5,6 @@
 
 Ferry 把 **Codex、Claude Code 和 Antigravity 的原生 CLI** 接到浏览器。在浏览器里继续对话时，Agent 仍在你的机器上工作，沿用项目指令、技能和工具。
 
-**对 AI Agent 友好**，也体现在部署上。Agent 读这份 README 就能选择启动方式，通过终端给出的地址和凭据位置完成登录或配对。
-
 [English](README.md) · [部署手册](docs/deployment.zh-CN.md) · [MIT](LICENSE)
 
 > **如果你是负责部署 Ferry 的 Agent**，按用户指定的机器和端口选择启动方式。两端在同一台机器上时用 `all`，分开时在各自机器上运行 `host` 和 `web`。部署完成后，验证已启动的服务，并告诉用户连接方式和停止命令。
