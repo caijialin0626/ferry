@@ -182,6 +182,10 @@ jobs:
           ref: ${{ needs.intake.outputs.base }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Verify trusted controller and Codex image
+        run: |
+          python3 -B .github/maintenance/test_policy.py
+          docker build --tag ferry-codex - < .github/maintenance/codex.Dockerfile
       - name: Test exact candidate in a credential-free container
         env:
           CANDIDATE: ${{ needs.propose.outputs.sha || needs.intake.outputs.base }}
