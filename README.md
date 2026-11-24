@@ -52,7 +52,7 @@ In this sample Field Notes project, the sidebar lists projects and chats alongsi
 
 ## Design principles
 
-- **Quick to use, quick to change.** Start with one command and switch chats with `⌘K` or `Ctrl+K`. Small CLI adapters make upstream changes easier to follow. The [issue workflow](.github/maintenance/README.md) can triage reports and prepare tested fixes. We’re also exploring automated upstream CLI updates.
+- **Quick to use, quick to change.** Start with one command and switch chats with `⌘K` or `Ctrl+K`. Small CLI adapters make upstream changes easier to follow. The [issue workflow](.github/maintenance/README.md) can triage reports and prepare tested fixes. Issues suited to automated handling receive development, testing, and merge status updates on the original issue, with links to the corresponding PR or run. We’re also exploring automated upstream CLI updates.
 - **Carry the native harness.** Ferry forwards instructions through the Codex App Server and the other CLIs’ native `stream-json` interfaces without adding a system prompt.
 - **Remote from the start.** Web handles sign-in and relays requests. Each host runs its agents and keeps its chat history. Deploy both on one machine or put them on separate machines.
 
