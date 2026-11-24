@@ -1,0 +1,237 @@
+name: Ferry issue maintainer
+run-name: Ferry · ${{ inputs.mode || (github.event_name == 'schedule' && 'refresh') || 'issue' }} ${{ github.event.issue.number || inputs.issue }}
+
+on:
+  issues:
+    types: [opened]
+  schedule:
+    - cron: '19 5 * * 2'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Process an issue, refresh the CI login, or verify the release gate
+        type: choice
+        options: [issue, refresh, verify]
+        default: issue
+      issue:
+        description: Issue number (issue mode only)
+        type: string
+
+permissions: {}
+# A rotating login must have one writer. Queue bursts instead of replacing pending issues.
+concurrency:
+  group: ferry-issue-maintainer
+  queue: max
+
+env:
+  ISSUE: ${{ github.event.issue.number || inputs.issue }}
+  MODE: ${{ inputs.mode || (github.event_name == 'schedule' && 'refresh') || 'issue' }}
+  BRANCH: ${{ github.event.repository.default_branch }}
+
+jobs:
+  intake:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      base: ${{ steps.base.outputs.sha }}
+      admitted: ${{ steps.issue.outputs.admitted }}
+      fingerprint: ${{ steps.issue.outputs.fingerprint }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.BRANCH }}
+          persist-credentials: false
+      - id: base
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - id: issue
+        if: env.MODE == 'issue'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/maintenance/issue.py admit
+
+  codex:
+    needs: intake
+    if: needs.intake.outputs.admitted == 'yes' || inputs.mode == 'refresh' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 48
+    permissions:
+      contents: read
+      actions: write # requeue stale credential snapshots
+      issues: write
+    outputs:
+      candidate: ${{ steps.agent.outputs.candidate }}
+      approved: ${{ steps.agent.outputs.approved }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.intake.outputs.base }}
+          persist-credentials: false
+      - id: fresh
+        env:
+          WRITER: ${{ secrets.CODEX_SECRET_WRITER }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/maintenance/issue.py freshness
+      - name: Install pinned Codex in an isolated image
+        if: steps.fresh.outputs.fresh == 'yes'
+        run: docker build --tag ferry-codex - < .github/maintenance/codex.Dockerfile
+      - name: Restore managed login
+        id: restore
+        if: steps.fresh.outputs.fresh == 'yes'
+        env:
+          LOGIN: ${{ secrets.CODEX_AUTH_JSON }}
+        run: |
+          umask 077
+          mkdir "$RUNNER_TEMP/ferry-auth"
+          printf '%s' "$LOGIN" > "$RUNNER_TEMP/ferry-auth/auth.json"
+          jq -e '.tokens.refresh_token | type == "string" and length > 0' "$RUNNER_TEMP/ferry-auth/auth.json" >/dev/null
+          sha256sum "$RUNNER_TEMP/ferry-auth/auth.json" > "$RUNNER_TEMP/auth-before"
+      - id: agent
+        if: steps.restore.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FINGERPRINT: ${{ needs.intake.outputs.fingerprint }}
+        run: |
+          if [[ "$MODE" == refresh ]]; then
+            python3 .github/maintenance/issue.py keepalive
+          else
+            python3 .github/maintenance/issue.py develop
+          fi
+      - name: Persist rotated login even when development fails
+        if: always() && steps.restore.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.CODEX_SECRET_WRITER }}
+        run: |
+          auth="$RUNNER_TEMP/ferry-auth/auth.json"
+          if ! sha256sum --status -c "$RUNNER_TEMP/auth-before"; then
+            jq -e '.tokens.refresh_token | type == "string" and length > 0' "$auth" >/dev/null
+            for wait in 0 2 5; do
+              sleep "$wait"
+              if gh secret set CODEX_AUTH_JSON -R "$GITHUB_REPOSITORY" < "$auth"; then exit 0; fi
+            done
+            exit 1
+          fi
+      - name: Remove runner credential copy
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/ferry-auth" "$RUNNER_TEMP/auth-before"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.agent.outputs.candidate == 'yes'
+        with:
+          name: patch-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ferry.patch
+          if-no-files-found: error
+          retention-days: 3
+
+  propose:
+    needs: [intake, codex]
+    if: needs.codex.outputs.candidate == 'yes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    outputs:
+      sha: ${{ steps.pr.outputs.sha }}
+      pr: ${{ steps.pr.outputs.pr }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.intake.outputs.base }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: patch-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/patch
+      - id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FINGERPRINT: ${{ needs.intake.outputs.fingerprint }}
+        run: |
+          python3 .github/maintenance/issue.py confirm
+          # Validate the staged paths again in this job before granting a branch on origin.
+          git apply --cached "$RUNNER_TEMP/patch/ferry.patch"
+          python3 .github/maintenance/issue.py validate
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "Address Ferry issue #$ISSUE"
+          head="ferry/issue-$ISSUE-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          git push origin "HEAD:refs/heads/$head"
+          pr=$(gh pr create --base "$BRANCH" --head "$head" --title "Address Ferry issue #$ISSUE" \
+            --body "Closes #$ISSUE. Generated by the Ferry issue workflow; validation runs separately.")
+          echo "pr=${pr##*/}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          MESSAGE="候选改动已提交至 $pr 。正在运行语法检查、集成测试和浏览器端到端测试。" python3 .github/maintenance/issue.py notify
+
+  gate:
+    needs: [intake, propose]
+    if: >-
+      always() && !cancelled() && needs.intake.result == 'success' &&
+      (inputs.mode == 'verify' || needs.propose.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.intake.outputs.base }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test exact candidate in a credential-free container
+        env:
+          CANDIDATE: ${{ needs.propose.outputs.sha || needs.intake.outputs.base }}
+        run: bash .github/maintenance/gate.sh
+
+  merge:
+    needs: [intake, codex, propose, gate]
+    if: needs.codex.outputs.approved == 'yes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+      issues: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.intake.outputs.base }}
+          fetch-depth: 0
+      - name: Land only the reviewed and tested commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.propose.outputs.sha }}
+          PR: ${{ needs.propose.outputs.pr }}
+          FINGERPRINT: ${{ needs.intake.outputs.fingerprint }}
+        run: |
+          python3 .github/maintenance/issue.py confirm
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" |
+            jq -e --arg sha "$SHA" --arg base "$BRANCH" '.state == "open" and (.draft | not) and .head.sha == $sha and .base.ref == $base' >/dev/null
+          test "$(git rev-parse "$SHA^")" = "$(git rev-parse HEAD)"
+          # Normal fast-forward only. Concurrent changes or protected-branch rules reject this push.
+          git push origin "$SHA:refs/heads/$BRANCH"
+          MESSAGE="准出检查通过，已将通过测试的提交 \`$SHA\` 合入 \`$BRANCH\`（PR #$PR）。" python3 .github/maintenance/issue.py notify
+          gh issue close "$ISSUE" -R "$GITHUB_REPOSITORY"
+
+  report:
+    needs: [intake, codex, propose, gate, merge]
+    if: >-
+      always() && !cancelled() && needs.intake.outputs.admitted == 'yes' &&
+      (failure() || (needs.gate.result == 'success' && needs.codex.outputs.approved == 'no'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW: ${{ needs.codex.outputs.approved }}
+          GATE: ${{ needs.gate.result }}
+        run: |
+          note='自动处理未完成，请查看失败阶段。修复后可从 Actions 重新提交该 issue。'
+          if [[ "$GATE" == success && "$REVIEW" == no ]]; then note='测试通过，但独立审查未准出；已保留 PR 供维护者复核。'; fi
+          gh issue comment "$ISSUE" -R "$GITHUB_REPOSITORY" --body "$note $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
