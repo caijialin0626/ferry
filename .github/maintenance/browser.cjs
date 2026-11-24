@@ -1,5 +1,5 @@
 // A real browser exercises the Web-to-host relay. Only the external CLI is simulated.
-const { chromium } = require(process.env.PLAYWRIGHT_CORE || '/opt/ferry-checks/node_modules/playwright-core');
+const { chromium, webkit } = require(process.env.PLAYWRIGHT_CORE || '/opt/ferry-checks/node_modules/playwright-core');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
 const fs = require('node:fs/promises');
@@ -44,10 +44,29 @@ else {
       if (await fetch(url).then(r => r.ok).catch(() => false)) break;
       await delay(100);
     }
-    browser = await chromium.launch({ executablePath: process.env.CHROME_BIN || '/usr/bin/chromium',
+    browser = process.env.SMOKE_WEBKIT === '1' ? await webkit.launch() : await chromium.launch({ executablePath: process.env.CHROME_BIN || '/usr/bin/chromium',
       args: ['--no-sandbox', '--disable-dev-shm-usage'] });
-    const page = await browser.newPage();
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, colorScheme: 'dark' });
+    // Verify the first paint and live system changes without reloading or a saved theme preference.
+    async function appearance(scheme) {
+      await page.waitForFunction(expected => {
+        const root = document.documentElement;
+        const color = name => getComputedStyle(root).getPropertyValue(name).trim();
+        const meta = [...document.querySelectorAll('meta[name="theme-color"]')].find(tag => matchMedia(tag.media).matches);
+        const surface = getComputedStyle(document.querySelector('.login-card')).backgroundColor;
+        const canvas = getComputedStyle(document.querySelector('.main')).backgroundColor;
+        return document.querySelector('meta[name="color-scheme"]').content === 'light dark' &&
+          meta?.content === color('--page') && surface === expected.surface && canvas === expected.canvas;
+      }, scheme === 'dark' ? { surface: 'rgb(32, 38, 34)', canvas: 'rgb(23, 27, 25)' }
+        : { surface: 'rgb(255, 255, 255)', canvas: 'rgb(251, 251, 250)' });
+    }
     await page.goto(url);
+    await appearance('dark');
+    await page.emulateMedia({ colorScheme: 'light' });
+    await appearance('light');
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await appearance('dark');
+    await page.setViewportSize({ width: 1280, height: 720 });
     await page.locator('#login-code').fill(code);
     await page.locator('#login-code').press('Enter');
     await page.locator('#new-chat').click();
@@ -58,6 +77,7 @@ else {
     await reply.waitFor();
     await page.reload();
     await reply.waitFor();
+    await appearance('dark');
     console.log('Browser login, chat, native reply and persisted history passed.');
   } finally {
     await browser?.close();
