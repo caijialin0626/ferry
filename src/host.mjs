@@ -10,7 +10,6 @@ import { homedir, hostname } from 'node:os';
 import { one, openDatabase, withTransaction } from './db.mjs';
 import { adapters, agentOptions, discoverAgents } from './agents.mjs';
 import { addAttachment, readImages, readLinkedReplyImage, readReplyImage, readVideo, videoExtensions } from './attachments.mjs';
-import { isLegacyClaudeTool, restoreClaudeHistory } from './claude-history.mjs';
 import { userAnswers } from './questions.mjs';
 import { HttpError, body, failure, json, maxImages, sameSecret, secret, sendLimit, sse } from './common.mjs';
 import { hostData as data, openPairing } from './pairing.mjs';
@@ -611,14 +610,9 @@ const server = createServer(async (req, res) => {
     const [, id, action] = route;
     if (req.method === 'GET' && (!action || action === 'messages')) {
       const before = action ? numeric(searchParams.get('before')) : Number.MAX_SAFE_INTEGER;
-      const page = await readHistory(db, id, before, !action);
+      const page = await readHistory(db, id, before, !action, recentWorkspace);
       if (!page) throw new HttpError(404, 'Chat not found.');
-      const { session, cursor, older } = page;
-      let { messages } = page;
-      if (!action && session.agent === 'claude' && session.native_id && messages.some(isLegacyClaudeTool)) {
-        const cwd = session.project === recentProject ? recentWorkspace : (await getProject(session.project))?.directory;
-        messages = await restoreClaudeHistory(messages, session.native_id, cwd, ['running', 'stopping'].includes(session.state));
-      }
+      const { session, cursor, older, messages } = page;
       return json(res, 200, action ? { messages, older } : {
         session: publicSession(session), messages, older, cursor, includesRecentReplies: true,
       });

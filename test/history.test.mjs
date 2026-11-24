@@ -4,7 +4,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { restoreClaudeHistory } from '../src/claude-history.mjs';
+import { openDatabase } from '../src/db.mjs';
+import { independentProject, readHistory } from '../src/history.mjs';
 
 test('Claude history restores native text and commands in order after a legacy turn ends', async t => {
   const root = await mkdtemp(join(tmpdir(), 'ra-claude-history-'));
@@ -35,10 +36,27 @@ test('Claude history restores native text and commands in order after a legacy t
     { id: 'answer', role: 'agent', text: '先看这里：目录存在。' },
     { id: 'old-tool', role: 'tool', text: 'Bash', reply_offset: 5 },
   ];
-  assert.deepEqual(await restoreClaudeHistory(history, nativeId, cwd, true), history);
-  const restored = await restoreClaudeHistory(history, nativeId, cwd, false);
+  const db = openDatabase(':memory:');
+  t.after(() => db.end());
+  await db.query('INSERT INTO projects(id,directory,name) VALUES ($1,$2,$3)', ['project', cwd, 'Fixture']);
+  await db.query('INSERT INTO sessions(id,project,agent,native_id,title,state,updated) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+    ['chat', 'project', 'claude', nativeId, 'Fixture', 'running', 0]);
+  for (const { id, role, text, reply_offset } of history) {
+    await db.query('INSERT INTO messages(session,id,role,text,reply_offset) VALUES ($1,$2,$3,$4,$5)',
+      ['chat', id, role, text, reply_offset]);
+  }
+  const messages = async (initial = true, independentDirectory) =>
+    (await readHistory(db, 'chat', Number.MAX_SAFE_INTEGER, initial, independentDirectory)).messages;
+  const original = await messages(false);
+  assert.deepEqual(await messages(), original);
+  await db.query("UPDATE sessions SET state='idle' WHERE id='chat'");
+  const restored = await messages();
   assert.equal(restored[1].text, '先看这里：\n\n目录存在。');
   assert.deepEqual(restored.slice(2).map(row => [row.text, row.reply_offset]), [['Bash · pwd', 5], ['Bash · ls', 5]]);
-  const unmatched = history.map(row => row.role === 'agent' ? { ...row, text: '结果不一致。' } : row);
-  assert.deepEqual(await restoreClaudeHistory(unmatched, nativeId, cwd, false), unmatched);
+  assert.deepEqual(await messages(false), original);
+  await db.query('INSERT INTO projects(id,directory,name) VALUES ($1,$2,$3)', [independentProject, '@independent', 'Standalone']);
+  await db.query("UPDATE sessions SET project=$1 WHERE id='chat'", [independentProject]);
+  assert.deepEqual(await messages(true, cwd), restored);
+  await db.query("UPDATE messages SET text='结果不一致。' WHERE session='chat' AND role='agent'");
+  assert.deepEqual(await messages(true, cwd), await messages(false));
 });

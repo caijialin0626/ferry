@@ -11,7 +11,7 @@ import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import WebSocket from 'ws';
 import { decodeReplyImage, readReplyImage } from './attachments.mjs';
-import { claudeToolText } from './claude-history.mjs';
+import { claudeToolText } from './history.mjs';
 import { userQuestions } from './questions.mjs';
 
 const exec = promisify(execFile);
