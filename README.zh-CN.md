@@ -52,7 +52,7 @@ npx --yes github:caijialin0626/ferry#main web --port 8787
 
 ## 设计理念
 
-- **用起来快，迭代也快。** 一条命令启动，`⌘K` 或 `Ctrl+K` 切换对话。每个 CLI 的适配器都很薄，方便跟进上游变化。后续也会考虑自动跟进 Agent CLI 更新。
+- **用起来快，迭代也快。** 一条命令启动，`⌘K` 或 `Ctrl+K` 切换对话。每个 CLI 的适配器都很薄，方便跟进上游变化。GitHub Actions 每天检查三个 CLI 的稳定版。Codex 对照发行说明和适配代码，遇到模型目录格式、启动参数等变化时，会按需提交修复。
 - **做 harness 的搬运工。** Ferry 通过 Codex App Server、Claude Code 和 Antigravity 的 `stream-json` 接口转发指令，不额外叠加系统提示词。
 - **从一开始就支持远程。** Web 端负责登录和转发，执行机负责运行 Agent 和保存对话。两端可以在同一台机器上启动，也可以各自部署。
 

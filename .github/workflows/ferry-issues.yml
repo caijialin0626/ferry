@@ -1,5 +1,5 @@
 name: Ferry issue maintainer
-run-name: Ferry · ${{ inputs.mode || (github.event_name == 'schedule' && 'refresh') || 'issue' }} ${{ github.event.issue.number || inputs.issue }}
+run-name: Ferry · ${{ inputs.mode || (github.event_name == 'schedule' && 'refresh') || 'issue' }} ${{ github.event.issue.number || inputs.issue || inputs.cli }}
 
 on:
   issues:
@@ -9,13 +9,17 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Process an issue, refresh the CI login, or verify the release gate
+        description: Process an issue, check a CLI release, refresh the CI login, or verify the release gate
         type: choice
-        options: [issue, refresh, verify]
+        options: [issue, upstream, refresh, verify]
         default: issue
       issue:
         description: Issue number (issue mode only)
         type: string
+      cli:
+        description: CLI to check (upstream mode only)
+        type: choice
+        options: [codex, claude, agy]
 
 permissions: {}
 # A rotating login must have one writer. Queue bursts instead of replacing pending issues.
@@ -27,6 +31,7 @@ env:
   ISSUE: ${{ github.event.issue.number || inputs.issue }}
   MODE: ${{ inputs.mode || (github.event_name == 'schedule' && 'refresh') || 'issue' }}
   BRANCH: ${{ github.event.repository.default_branch }}
+  CLI: ${{ inputs.cli }}
 
 jobs:
   intake:
@@ -41,6 +46,8 @@ jobs:
       base: ${{ steps.base.outputs.sha }}
       admitted: ${{ steps.issue.outputs.admitted }}
       fingerprint: ${{ steps.issue.outputs.fingerprint }}
+      tags: ${{ steps.releases.outputs.tags }}
+      previous: ${{ steps.releases.outputs.previous }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -53,10 +60,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/maintenance/issue.py admit
+      - id: releases
+        if: env.MODE == 'upstream'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/maintenance/upstream.py discover
 
   codex:
     needs: intake
-    if: needs.intake.outputs.admitted == 'yes' || inputs.mode == 'refresh' || github.event_name == 'schedule'
+    if: needs.intake.outputs.admitted == 'yes' || needs.intake.outputs.tags != '' || inputs.mode == 'refresh' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 48
     permissions:
@@ -68,6 +80,7 @@ jobs:
       artifact: ${{ steps.upload.outputs.artifact-id }}
       candidate: ${{ steps.agent.outputs.candidate }}
       approved: ${{ steps.agent.outputs.approved }}
+      assessed: ${{ steps.agent.outputs.assessed }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -97,9 +110,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           FINGERPRINT: ${{ needs.intake.outputs.fingerprint }}
+          TAGS: ${{ needs.intake.outputs.tags }}
         run: |
           if [[ "$MODE" == refresh ]]; then
             python3 .github/maintenance/issue.py keepalive
+          elif [[ "$MODE" == upstream ]]; then
+            python3 .github/maintenance/upstream.py assess
           else
             python3 .github/maintenance/issue.py develop
           fi
@@ -128,6 +144,26 @@ jobs:
           path: ${{ runner.temp }}/ferry.patch
           if-no-files-found: error
           retention-days: 3
+
+  checkpoint:
+    needs: [intake, codex]
+    if: needs.codex.outputs.assessed == 'yes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.intake.outputs.base }}
+          persist-credentials: false
+      - name: Record assessed releases on the state branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAGS: ${{ needs.intake.outputs.tags }}
+          PREVIOUS: ${{ needs.intake.outputs.previous }}
+          BASE: ${{ needs.intake.outputs.base }}
+        run: python3 .github/maintenance/upstream.py record
 
   propose:
     needs: [intake, codex]
@@ -189,6 +225,7 @@ jobs:
       - name: Verify trusted controller and Codex image
         run: |
           python3 -B .github/maintenance/test_policy.py
+          python3 -B .github/maintenance/test_upstream.py
           docker build --tag ferry-codex - < .github/maintenance/codex.Dockerfile
       - name: Test exact candidate in a credential-free container
         env:

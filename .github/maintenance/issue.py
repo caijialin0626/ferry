@@ -64,7 +64,11 @@ def admit():
     if not item or len(item["title"].strip()) < 3:
         return
     info = api(f"issues/{number()}")
-    if info["user"]["type"] == "Bot":
+    if info["user"]["type"] == "Bot" and not (
+        os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch"
+        and info["user"]["login"] == "github-actions[bot]"
+        and item["body"].startswith("<!-- ferry:adapt -->\n")
+    ):
         return
     # Reserve only the first N issue openings per UTC day, independent of runner order.
     # Bound both total usage and a single author's share before invoking a model.
@@ -254,8 +258,10 @@ def freshness():
     if updated >= created:
         # Repo secrets are snapshotted when the workflow is queued. Dispatch a fresh snapshot.
         time.sleep(2)
-        api("actions/workflows/ferry-issues.yml/dispatches", {"ref": os.environ["BRANCH"],
-            "inputs": {"issue": os.environ.get("ISSUE", ""), "mode": os.environ["MODE"]}})
+        inputs = {"issue": os.environ.get("ISSUE", ""), "mode": os.environ["MODE"]}
+        if inputs["mode"] == "upstream":
+            inputs["cli"] = os.environ["CLI"]
+        api("actions/workflows/ferry-issues.yml/dispatches", {"ref": os.environ["BRANCH"], "inputs": inputs})
         return
     output("fresh", "yes")
 

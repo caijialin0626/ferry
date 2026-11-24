@@ -52,7 +52,7 @@ In this sample Field Notes project, the sidebar lists projects and chats alongsi
 
 ## Design principles
 
-- **Quick to use, quick to change.** Start with one command and switch chats with `⌘K` or `Ctrl+K`. Small CLI adapters make upstream changes easier to follow. We’re also exploring automated upstream CLI updates.
+- **Quick to use, quick to change.** Start with one command and switch chats with `⌘K` or `Ctrl+K`. Small CLI adapters make upstream changes easier to follow. GitHub Actions checks all three CLIs for new stable releases daily. Codex compares their release notes with Ferry’s adapters and proposes fixes for changes such as a new model catalog format or a renamed flag.
 - **Carry the native harness.** Ferry forwards instructions through the Codex App Server and the other CLIs’ native `stream-json` interfaces without adding a system prompt.
 - **Remote from the start.** Web handles sign-in and relays requests. Each host runs its agents and keeps its chat history. Deploy both on one machine or put them on separate machines.
 
