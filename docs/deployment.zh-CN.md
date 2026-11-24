@@ -22,7 +22,7 @@ ssh -N -L 127.0.0.1:8787:127.0.0.1:8787 user@machine
 
 ## 跨机器部署
 
-使用[首页的独立启动命令](../README.zh-CN.md)：在装有 CLI 的机器运行 `host`，在提供网页的机器运行 `web`。用 `--port` 选端口，`--bind` 选本机监听 IP。Web 在 HTTPS 反向代理后面时，用 `--origin https://ferry.example.com` 指定浏览器使用的地址。
+使用[首页的独立启动命令](../README.zh-CN.md)：在装有 CLI 的机器运行 `host`，在提供网页的机器运行 `web`。独立服务优先选局域网私有 IPv4，其次选共享地址段 IPv4（如 Tailscale）或私有 IPv6。没有合适的地址时会监听回环地址。使用终端打印的网址；如果两台机器通过另一张网卡互通，用 `--bind IP` 指定它，端口用 `--port` 调整。Web 在 HTTPS 反向代理后面时，用 `--origin https://ferry.example.com` 指定浏览器使用的地址；这种模式默认监听回环地址，供同机代理连接。
 
 执行机启动时会打印 10 分钟内有效的单次配对码。如果过期，在执行机上运行 `npx --yes github:caijialin0626/ferry#main pair` 即可重新生成。两端都支持 `--foreground`，供进程管理器使用。
 

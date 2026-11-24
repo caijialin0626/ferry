@@ -22,7 +22,7 @@ Open <http://127.0.0.1:8787> in the client browser. On a phone, configure the sa
 
 ## Separate machines
 
-Use the [standalone commands in the README](../README.md). Run `host` where the CLIs are installed and `web` on the machine serving the browser. Use `--port` to select the port and `--bind` to select a local IP. When Web runs behind an HTTPS reverse proxy, set the browser address with `--origin https://ferry.example.com`.
+Use the [standalone commands in the README](../README.md). Run `host` where the CLIs are installed and `web` on the machine serving the browser. Standalone services prefer a private LAN IPv4 address, followed by shared-space IPv4 (such as Tailscale), then private IPv6. They fall back to loopback if none is available. Use the printed URL. If the peer is reachable through a different interface, select it with `--bind IP`. Set the port with `--port`. When Web runs behind an HTTPS reverse proxy, set the browser address with `--origin https://ferry.example.com`. With an explicit origin, Web defaults to loopback for a proxy on the same machine.
 
 The host prints a single-use pairing code valid for ten minutes. To get a fresh code, run `npx --yes github:caijialin0626/ferry#main pair` on the host. Both roles accept `--foreground` for process managers.
 

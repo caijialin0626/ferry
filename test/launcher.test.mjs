@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { connect, createServer } from 'node:net';
+import { privateListenAddress } from '../src/listen-address.mjs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -24,11 +25,13 @@ async function start(t, dir, port, ...args) {
     env: { ...process.env, XDG_DATA_HOME: dir }, timeout: 10000,
   });
   const pid = Number(stdout.match(/Stop Ferry: kill (\d+)/)[1]);
+  const printedAddress = stdout.match(/(?:running at|listening at) (https?:\/\/\S+)/)[1];
+  const hostname = new URL(printedAddress).hostname.replace(/^\[|\]$/g, '');
   t.after(async () => {
     process.kill(pid, 'SIGTERM');
     for (let i = 0; i < 100; i++) {
       const listening = await new Promise(resolve => {
-        const socket = connect(Number(port), '127.0.0.1');
+        const socket = connect(Number(port), hostname);
         socket.once('error', () => resolve(false));
         socket.once('connect', () => { socket.destroy(); resolve(true); });
       });
@@ -48,14 +51,17 @@ for (const mode of ['all', 'split']) {
       let webPort = await availablePort();
       while (webPort === hostPort) webPort = await availablePort();
       const webDir = join(tmp, 'web-machine');
-      const url = 'http://127.0.0.1:' + webPort;
+      let url = 'http://127.0.0.1:' + webPort;
+      let hostUrl;
       let invitation;
       if (mode === 'all') {
         await start(t, webDir, webPort, 'all', '--host-port', hostPort, '--web-port', webPort);
       } else {
-        const host = await start(t, join(tmp, 'agent-machine'), hostPort, 'host', '--bind', '127.0.0.1', '--port', hostPort);
+        const host = await start(t, join(tmp, 'agent-machine'), hostPort, 'host', '--port', hostPort);
         invitation = host.match(/Pairing code: (\d{8})/)[1];
-        await start(t, webDir, webPort, 'web', '--port', webPort, '--origin', url);
+        hostUrl = host.match(/listening at (\S+)/)[1];
+        const web = await start(t, webDir, webPort, 'web', '--port', webPort);
+        url = web.match(/running at (\S+)/)[1];
       }
 
       const code = (await readFile(join(webDir, 'ferry/local/access-code'), 'utf8')).trim();
@@ -71,7 +77,7 @@ for (const mode of ['all', 'split']) {
       if (mode === 'split') {
         assert.deepEqual(await machines(), []);
         const pair = await fetch(url + '/api/machines/pair', {
-          method: 'POST', headers, body: JSON.stringify({ address: 'http://127.0.0.1:' + hostPort, code: invitation }),
+          method: 'POST', headers, body: JSON.stringify({ address: hostUrl, code: invitation }),
         });
         assert.equal(pair.status, 201);
       }
@@ -83,3 +89,18 @@ for (const mode of ['all', 'split']) {
     }
   });
 }
+
+test('automatic bind chooses private addresses and falls back to loopback', () => {
+  const entry = (address, family = 'IPv4') => ({ address, family, internal: false });
+  const interfaces = {
+    lo: [{ ...entry('127.0.0.1'), internal: true }], docker0: [entry('172.17.0.1')],
+    eth0: [entry('203.0.113.10'), entry('fe80::2', 'IPv6')],
+  };
+  assert.equal(privateListenAddress(interfaces), '127.0.0.1');
+  interfaces.wg = [entry('fd00::1', 'IPv6')];
+  assert.equal(privateListenAddress(interfaces), 'fd00::1');
+  interfaces.mesh = [entry('100.64.0.1')];
+  assert.equal(privateListenAddress(interfaces), '100.64.0.1');
+  interfaces.wifi = [entry('192.168.1.20')];
+  assert.equal(privateListenAddress(interfaces), '192.168.1.20');
+});

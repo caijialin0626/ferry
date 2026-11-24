@@ -3,7 +3,7 @@
   <img src="docs/assets/logo-light.svg" alt="Ferry" width="220">
 </picture>
 
-Ferry 把 **Codex、Claude Code 和 Antigravity 的原生 CLI** 接到浏览器。在手机上继续对话时，Agent 仍在你的机器上工作，沿用项目指令、技能和工具。
+Ferry 把 **Codex、Claude Code 和 Antigravity 的原生 CLI** 接到浏览器。在浏览器里继续对话时，Agent 仍在你的机器上工作，沿用项目指令、技能和工具。
 
 **对 AI Agent 友好**，也体现在部署上。Agent 读这份 README 就能选择启动方式，通过终端给出的地址和凭据位置完成登录或配对。
 
@@ -19,21 +19,36 @@ Ferry 把 **Codex、Claude Code 和 Antigravity 的原生 CLI** 接到浏览器�
 npx --yes github:caijialin0626/ferry#main all --web-port 8787 --host-port 8788
 ```
 
-**只启动执行机** · 把示例 IP 换成 Web 服务能访问的执行机私网地址。
+**只启动执行机** · 在装有 Agent CLI 的机器上运行。
 
 ```sh
-npx --yes github:caijialin0626/ferry#main host --bind 192.168.1.20 --port 8788
+npx --yes github:caijialin0626/ferry#main host --port 8788
 ```
 
-**只启动 Web** · 把示例 IP 换成浏览器能访问的 Web 服务器私网地址。
+**只启动 Web** · 在提供浏览器界面的机器上运行。
 
 ```sh
-npx --yes github:caijialin0626/ferry#main web --bind 192.168.1.10 --port 8787
+npx --yes github:caijialin0626/ferry#main web --port 8787
 ```
 
-端口数字可以直接改，省略时使用上面的默认值。打开 Web 打印的网址，用终端提示的访问码文件登录。分开部署时，在 **执行机器 → 添加执行机** 中填入执行机地址和它打印的 8 位配对码。
+分开部署会自动选择私网 IP 并打印地址。多网卡机器可用 `--bind` 指定地址。端口可改，也可省略。打开 Web 打印的网址，用终端提示的访问码文件登录。分开部署时，在 **执行机器 → 添加执行机** 中填入执行机地址和它打印的 8 位配对码。
 
-![浏览器连到 Ferry Web，由它将请求转发给运行 Agent CLI 的执行机。对话保存在执行机的 SQLite 中。](docs/assets/route.svg)
+## 工作区预览
+
+在示例项目 Field Notes 中，左侧切换项目和对话，右侧查看 Codex 的回复与测试结果。
+
+![Ferry 项目工作区，演示对话讨论笔记的离线搜索和排序测试](docs/assets/workspace.zh-CN.png)
+
+<details>
+<summary>查看快速切换面板</summary>
+
+![在快速切换面板中查找项目和对话](docs/assets/quick-switch.zh-CN.png)
+
+</details>
+
+- **实时对话。** 看实时回复和工具调用，中途补充一句指令，或回答 Agent 的提问。断线重连后会补上错过的内容。
+- **多机切换。** 用一次性配对码接入另一台执行机，通过侧栏切换项目。每台机器沿用自己的模型、技能和 MCP 配置。
+- **对话分支。** 从当前对话分叉，或者让主任务继续跑，在旁边开个只读对话查一个问题。
 
 ## 设计理念
 
@@ -41,10 +56,6 @@ npx --yes github:caijialin0626/ferry#main web --bind 192.168.1.10 --port 8787
 - **做 harness 的搬运工。** Ferry 通过 Codex App Server、Claude Code 和 Antigravity 的 `stream-json` 接口转发指令，不额外叠加系统提示词。
 - **从一开始就支持远程。** Web 端负责登录和转发，执行机负责运行 Agent 和保存对话。两端可以在同一台机器上启动，也可以各自部署。
 
-## 从手机接着做什么？
-
-- **接着聊。** 看实时回复和工具调用，中途补充一句指令，或回答 Agent 的提问。断线重连后会补上错过的内容。
-- **换台机器。** 用一次性配对码接入另一台执行机，通过侧栏切换项目。每台机器沿用自己的模型、技能和 MCP 配置。
-- **留条支线。** 从当前对话分叉，或者让主任务继续跑，在旁边开个只读对话查一个问题。
+![浏览器连到 Ferry Web，由它将请求转发给运行 Agent CLI 的执行机。对话保存在执行机的 SQLite 中。](docs/assets/route.svg)
 
 单机入口默认只允许本机访问。要从手机连接或部署多台机器，请看[远程部署](docs/deployment.zh-CN.md#从另一台设备登录)。能登录的人可以在执行机上运行命令，Agent 执行操作时不会逐项请求批准。

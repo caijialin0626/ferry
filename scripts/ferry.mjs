@@ -7,6 +7,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { privateListenAddress } from '../src/listen-address.mjs';
 import { issuePairingCode, pairingLifetime, writeOnce } from '../src/pairing.mjs';
 
 const state = join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'ferry', 'local');
@@ -24,7 +25,7 @@ const usage = `Usage:
   ferry host [--port 8788]
   ferry pair
 
---bind IP       Listen address (default 127.0.0.1). In all mode this sets the Web address.
+--bind IP       Override the listen address. Standalone services auto-select a private IP. all and --origin default to loopback.
 --origin URL    Browser-facing Web origin, for example https://ferry.example.com.
 --foreground    Keep services attached to this terminal.`;
 
@@ -57,7 +58,8 @@ function options() {
   const webPort = port(mode === 'web' ? 'port' : 'web-port', 8787);
   const hostPort = port(mode === 'host' ? 'port' : 'host-port', 8788);
   if (mode === 'all' && webPort === hostPort) throw Error('Choose different Web and host ports.');
-  const bind = values.bind ?? '127.0.0.1';
+  const standalone = mode === 'host' || (mode === 'web' && !values.origin);
+  const bind = values.bind ?? (standalone ? privateListenAddress() : '127.0.0.1');
   if (!isIP(bind)) throw Error('--bind requires an IP address.');
   const address = isIP(bind) === 6 ? '[' + bind + ']' : bind;
   if (mode !== 'host' && ['0.0.0.0', '::'].includes(bind) && !values.origin) {
@@ -125,7 +127,7 @@ async function supervise(config) {
       });
     }
     const pairingCode = mode === 'host' ? await issuePairingCode(join(state, 'host')) : undefined;
-    if (process.send) process.send({ pairingCode }, () => process.disconnect());
+    if (process.send) process.send({ config, pairingCode }, () => process.disconnect());
     else printConnection(config, pairingCode);
   } catch (error) {
     stop(1);
@@ -134,6 +136,9 @@ async function supervise(config) {
 }
 
 function printConnection(config, pairingCode) {
+  if (config.bind === '127.0.0.1' && (config.mode === 'host' || config.mode === 'web')) {
+    console.log('Listening on loopback. For remote access, use a tunnel or select a network address with --bind.');
+  }
   if (config.mode === 'host') {
     console.log('Execution host listening at ' + config.hostUrl);
     console.log('Pairing code: ' + pairingCode + ' (single use, ' + pairingLifetime / 60000 + ' minutes)');
@@ -143,7 +148,7 @@ function printConnection(config, pairingCode) {
   }
 }
 
-async function launch(config) {
+async function launch() {
   const output = await open(log, 'a', 0o600);
   let child;
   try {
@@ -159,7 +164,7 @@ async function launch(config) {
     child.once('message', resolve);
   });
   child.unref();
-  printConnection(config, ready.pairingCode);
+  printConnection(ready.config, ready.pairingCode);
   console.log('Stop Ferry: kill ' + child.pid);
 }
 
@@ -168,7 +173,7 @@ try {
   await mkdir(state, { recursive: true, mode: 0o700 });
   if (config.mode === 'pair') console.log('Pairing code: ' + await issuePairingCode(join(state, 'host')));
   else if (config.foreground) await supervise(config);
-  else await launch(config);
+  else await launch();
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;
