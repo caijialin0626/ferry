@@ -64,6 +64,8 @@ jobs:
       actions: write # requeue stale credential snapshots
       issues: write
     outputs:
+      accepted: ${{ steps.agent.outputs.accepted }}
+      artifact: ${{ steps.upload.outputs.artifact-id }}
       candidate: ${{ steps.agent.outputs.candidate }}
       approved: ${{ steps.agent.outputs.approved }}
     steps:
@@ -118,7 +120,8 @@ jobs:
       - name: Remove runner credential copy
         if: always()
         run: rm -rf "$RUNNER_TEMP/ferry-auth" "$RUNNER_TEMP/auth-before"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.agent.outputs.candidate == 'yes'
         with:
           name: patch-${{ github.run_attempt }}
@@ -144,7 +147,8 @@ jobs:
           ref: ${{ needs.intake.outputs.base }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: patch-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.codex.outputs.artifact }}
+          merge-multiple: true
           path: ${{ runner.temp }}/patch
       - id: pr
         env:
@@ -225,6 +229,7 @@ jobs:
     needs: [intake, codex, propose, gate, merge]
     if: >-
       always() && !cancelled() && needs.intake.outputs.admitted == 'yes' &&
+      (needs.codex.outputs.accepted == 'yes' || github.event_name == 'workflow_dispatch') &&
       (failure() || (needs.gate.result == 'success' && needs.codex.outputs.approved == 'no'))
     runs-on: ubuntu-latest
     timeout-minutes: 3
