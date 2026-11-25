@@ -1651,6 +1651,7 @@ function interactiveQuestion(entry) {
   try { questions = JSON.parse(entry.text); } catch { return; }
   if (!Array.isArray(questions) || !questions.length) return;
   const { id, machine } = session;
+  const asyncQuestion = entry.id.startsWith('async-question-');
   const node = el('form', 'interactive-question question-reply');
   const fields = el('fieldset', 'question-fields');
   const status = el('p', 'question-status');
@@ -1660,10 +1661,11 @@ function interactiveQuestion(entry) {
   const values = questions.map(question => {
     const field = el('fieldset', 'interactive-question-field');
     const legend = el('legend', '', question.question);
-    const options = question.options.map(option => {
+    const options = question.options.map((option, index) => {
       const control = el('input');
       control.type = question.multiple ? 'checkbox' : 'radio';
       control.name = question.id;
+      control.checked = asyncQuestion && index === 0;
       control.value = option.label;
       const label = el('label', 'question-option');
       const copy = el('span', 'question-option-copy', option.label);
@@ -1707,9 +1709,10 @@ function interactiveQuestion(entry) {
     }
     fields.hidden = Boolean(answer?.answers);
     receipt.hidden = !answer?.answers;
-    fields.disabled = sending || Boolean(answer) || session?.state !== 'running' || blocked();
+    const ended = !asyncQuestion && session?.state !== 'running';
+    fields.disabled = sending || Boolean(answer) || ended || blocked();
     if (answer?.answers) status.textContent = '';
-    else if (answer?.closed || session?.state !== 'running') status.textContent = t('This question has ended.');
+    else if (answer?.closed || ended) status.textContent = t('This question has ended.');
   };
   node.onsubmit = async event => {
     event.preventDefault();
