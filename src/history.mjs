@@ -33,7 +33,7 @@ export async function readHistory(db, id, before, initial, independentDirectory)
     const session = await one(client, 'SELECT * FROM sessions WHERE id=$1', [id]);
     if (!session) return;
     const { rows: messages } = await client.query(historyBounds + `
-      SELECT m.position,m.id,m.role,m.text,m.reply_offset,m.created_at
+      SELECT m.position,m.id,m.role,m.text,m.reply_offset,m.created_at,m.updated_at
       FROM bounds b CROSS JOIN messages m
       WHERE m.session=$1 AND m.position>=b.first AND m.position<$2 ORDER BY m.position`, [id, before, initial]);
     const first = messages[0]?.position;

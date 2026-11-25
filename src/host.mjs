@@ -159,6 +159,7 @@ async function execute(session, run, input, cwd, options, images) {
   let outputLength = 0;
   let imageCount = 0;
   let outputWrites = 0;
+  let lastOutputAt;
   const output = command + '-assistant';
   let openedOutput = false;
   let writeError;
@@ -181,12 +182,13 @@ async function execute(session, run, input, cwd, options, images) {
     timer = undefined;
     if (!buffer || (outputWrites && !force)) return;
     const text = buffer;
+    const updatedAt = lastOutputAt;
     buffer = '';
     outputWrites++;
     const persisted = queue(async () => {
       await withTransaction(db, async client => {
-        await client.query('UPDATE messages SET text=text || $1 WHERE session=$2 AND id=$3', [text, session.id, output]);
-        await record(client, session.id, 'delta', { id: output, text });
+        await client.query('UPDATE messages SET text=text || $1,updated_at=$4 WHERE session=$2 AND id=$3', [text, session.id, output, updatedAt]);
+        await record(client, session.id, 'delta', { id: output, text, updated_at: updatedAt });
       });
       publish(session.id);
     });
@@ -216,6 +218,7 @@ async function execute(session, run, input, cwd, options, images) {
     openOutput();
     outputLength += text.length;
     buffer += text;
+    lastOutputAt = Date.now();
     if (buffer.length >= 4096) flush();
     else timer ??= setTimeout(flush, 35);
   }
@@ -265,9 +268,10 @@ async function execute(session, run, input, cwd, options, images) {
     return queue(() => save(async () => {
       if (!turnStatus(run).turn) throw new HttpError(409, 'This turn cannot take guidance right now. Your draft is kept.');
       const offset = outputLength;
+      const createdAt = Date.now();
       try { await run.steer(input); }
       catch (error) { throw new HttpError(409, String(error.message || error).slice(0, 500)); }
-      return offset;
+      return { offset, createdAt };
     }), true);
   };
   try {
@@ -483,8 +487,8 @@ async function createBranch(source, id, kind) {
       [id, source.project, source.agent, nativeId, title, Date.now(), source.model, source.effort,
         Boolean(source.codex_imported), source.id, kind]);
     if (kind === 'fork') await client.query(`
-      INSERT INTO messages(session,id,role,text,reply_offset,attachment_session,created_at)
-      SELECT $1,id,role,text,reply_offset,COALESCE(attachment_session,session),created_at FROM messages
+      INSERT INTO messages(session,id,role,text,reply_offset,attachment_session,created_at,updated_at)
+      SELECT $1,id,role,text,reply_offset,COALESCE(attachment_session,session),created_at,updated_at FROM messages
       WHERE session=$2 AND position<=$3 ORDER BY position`, [id, source.id, cutoff]);
     return session;
   });
@@ -740,13 +744,13 @@ const server = createServer(async (req, res) => {
         const selectedProject = await one(client, 'SELECT archived FROM projects WHERE id=$1', [current.project]);
         if (current.archived || selectedProject.archived) throw new HttpError(409, 'Restore it from the archive to keep sending.');
       }
-      async function saveInput(client, role, offset = null) {
+      async function saveInput(client, role, offset = null, createdAt) {
         await client.query('INSERT INTO commands(session,id,text,request_key) VALUES ($1,$2,$3,$4)', [id, input.id, input.text, key]);
         const message = input.id + '-user';
         const attachments = images.map(image => ({ ...image, id: randomUUID() }));
         if (video) attachments.push({ ...video, content: Buffer.alloc(0) });
         await addMessage(client, id, message, role, input.text, attachments.map(image =>
-          imageMetadata({ id: image.id, name: image.name, media_type: image.mediaType })), offset);
+          imageMetadata({ id: image.id, name: image.name, media_type: image.mediaType })), offset, createdAt);
         if (receipt) await addMessage(client, id, input.id + '-answer', 'answer', receipt);
         for (const [position, image] of attachments.entries()) {
           await addAttachment(client, id, message, image, position);
@@ -764,10 +768,10 @@ const server = createServer(async (req, res) => {
             return false;
           });
           if (duplicate) return;
-          const offset = await deliver();
+          const { offset, createdAt } = await deliver();
           await withTransaction(db, async client => {
             await getSession(id, client);
-            await saveInput(client, 'steer', offset);
+            await saveInput(client, 'steer', offset, createdAt);
           });
           temporaryVideo = undefined;
           publish(id);

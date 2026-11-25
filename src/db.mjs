@@ -33,7 +33,7 @@ export function openDatabase(path) {
     );
     CREATE TABLE IF NOT EXISTS messages (
       session TEXT NOT NULL REFERENCES sessions(id), id TEXT NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL,
-      position INTEGER, reply_offset INTEGER, attachment_session TEXT, created_at INTEGER, PRIMARY KEY(session,id)
+      position INTEGER, reply_offset INTEGER, attachment_session TEXT, created_at INTEGER, updated_at INTEGER, PRIMARY KEY(session,id)
     );
     CREATE INDEX IF NOT EXISTS messages_session_position ON messages(session,position DESC);
     CREATE INDEX IF NOT EXISTS messages_agent_position ON messages(session,position DESC) WHERE role='agent';
@@ -62,7 +62,7 @@ export function openDatabase(path) {
       ['sessions', 'custom_title', 'INTEGER NOT NULL DEFAULT 0'],
       ['sessions', 'branch_parent', 'TEXT'], ['sessions', 'branch_kind', 'TEXT'],
       ['messages', 'attachment_session', 'TEXT'],
-      ['messages', 'created_at', 'INTEGER'],
+      ['messages', 'created_at', 'INTEGER'], ['messages', 'updated_at', 'INTEGER'],
     ];
     for (const [table, column, type] of columns) {
       if (!database.prepare('SELECT 1 FROM pragma_table_info(?) WHERE name=?').get(table, column)) {

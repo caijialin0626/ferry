@@ -503,6 +503,8 @@ require('node:readline').createInterface({input:process.stdin}).on('line',raw=>{
   assert.deepEqual(forkHistory.messages.find(m => m.id === videoId + '-user').images, batchHistory);
   assert.equal(forkHistory.messages.find(m => m.id === videoId + '-user').created_at,
     withVideo.messages.find(m => m.id === videoId + '-user').created_at);
+  assert.equal(forkHistory.messages.find(m => m.id === videoId + '-assistant').updated_at,
+    withVideo.messages.find(m => m.id === videoId + '-assistant').updated_at);
   assert.equal(forkHistory.cursor, 0);
   await call(forkPath + '/send', { id: randomUUID(), text: 'branch-check' }, 202);
   const forkReply = await finished(forkPath);
@@ -548,7 +550,10 @@ require('node:readline').createInterface({input:process.stdin}).on('line',raw=>{
   const guides = afterGuide.messages.filter(message => message.role === 'steer');
   assert.deepEqual(guides.map(({ text, reply_offset }) => [text, reply_offset]), [['换个方向', '先看。'.length]]);
   assert.equal(afterGuide.session.native_id, first.session.native_id);
-  assert.equal(afterGuide.messages.find(message => message.id === turn + '-assistant').text, '先看。引导已收到。');
+  const guidedReply = afterGuide.messages.find(message => message.id === turn + '-assistant');
+  assert.equal(guidedReply.text, '先看。引导已收到。');
+  assert.ok(guidedReply.created_at < guides[0].created_at);
+  assert.ok(guidedReply.updated_at >= guides[0].created_at);
   await call(url + '/send', { ...guided, id: randomUUID() }, 409);
   await call(url + '/send', guided, 202);
   const backgroundTurn = randomUUID();
