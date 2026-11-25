@@ -1,26 +1,26 @@
-name: Check upstream CLIs
-on:
-  schedule:
-    - cron: '37 3 * * *'
-  workflow_dispatch:
-
+name: Request file citation review
+on: workflow_dispatch
 permissions: {}
 jobs:
-  check:
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+  review:
+    if: github.ref == 'refs/heads/ferry/request-review-file-refs-16f0e60' && github.actor == 'caijialin0626'
     runs-on: ubuntu-latest
     timeout-minutes: 3
-    strategy:
-      fail-fast: false
-      matrix:
-        cli: [codex, claude, agy]
     permissions:
-      actions: write
+      contents: read
+      pull-requests: write
     steps:
-      - name: Queue a compatibility check
+      - name: Open the tested change for review
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          BRANCH: ${{ github.event.repository.default_branch }}
-          CLI: ${{ matrix.cli }}
-        run: gh workflow run ferry-issues.yml -R "$REPO" --ref "$BRANCH" -f mode=upstream -f cli="$CLI"
+        run: |
+          set -eu
+          head=ferry/render-file-citations
+          test "$(gh api "repos/$REPO/git/ref/heads/$head" --jq .object.sha)" = 16f0e60694c2bd716c1b1b8235ffbe494ec7fa73
+          cat > "$RUNNER_TEMP/review.md" <<'BODY'
+          Render a Markdown reference to an execution-host file as a compact filename and line range. The full URI is available on hover. The browser does not navigate to the local file.
+
+          The browser regression test uses a synthetic Antigravity response and checks the rendered reference and an ordinary web link before and after reload. Chromium and all 17 Linux integration tests passed.
+          BODY
+          gh pr create -R "$REPO" --base main --head "$head" --title 'Render agent file references with filenames and line numbers' --body-file "$RUNNER_TEMP/review.md"
