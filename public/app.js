@@ -292,17 +292,46 @@ function workspaceUrl(id, target = machineId, panel = sideFrame) {
   return query.size ? '/?' + query : '/';
 }
 const machineKey = (key, target = machineId) => target === primaryMachine ? key : key + '.' + target;
-async function api(path, data, target, signal) {
-  const url = apiUrl(path, target);
-  const options = { signal, ...(data === undefined ? {} : {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data),
-  }) };
-  const response = await fetch(url, options).catch(error => {
-    if (error instanceof TypeError) error.networkFailure = true;
-    throw error;
-  });
+async function api(path, data, target, signal, idleMs) {
+  // A history page can take several seconds to download over a relay. Only
+  // time out a stalled read, and keep navigation cancellation independent.
+  const idle = idleMs ? new AbortController() : null;
+  const cancel = () => idle.abort(signal.reason);
+  let timer;
+  const progress = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => idle.abort(new DOMException('Request timed out', 'TimeoutError')), idleMs);
+  };
+  if (idle) {
+    signal?.throwIfAborted();
+    signal?.addEventListener('abort', cancel, { once: true });
+    progress();
+  }
+  const requestSignal = idle?.signal ?? signal;
+  let response;
   let value = {};
-  try { value = await response.json(); } catch { value = {}; }
+  try {
+    response = await fetch(apiUrl(path, target), { signal: requestSignal, ...(data === undefined ? {} : {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data),
+    }) });
+    if (idle) progress();
+    if (idle && response.ok && response.body) {
+      const body = response.body.pipeThrough(new TransformStream({
+        transform(chunk, controller) { progress(); controller.enqueue(chunk); },
+      }));
+      value = await new Response(body).json();
+    } else {
+      try { value = await response.json(); }
+      catch (error) { if (response.ok) throw error; }
+    }
+  } catch (error) {
+    requestSignal?.throwIfAborted();
+    if (error instanceof TypeError || (response?.ok && error instanceof SyntaxError)) error.networkFailure = true;
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    if (idle) signal?.removeEventListener('abort', cancel);
+  }
   if (!response.ok) {
     if (response.status === 401 && path !== 'login' && path !== 'auth' && (await api('auth').catch(() => ({}))).signedIn === false) loginView();
     throw Object.assign(new Error(translateServer(value.error) || t('Request failed ({status}).', { status: response.status })), { status: response.status });
@@ -2210,7 +2239,7 @@ async function refresh(detect = false, quiet = false) {
     const discover = detect || !machines.length;
     const list = discover ? await discoverMachines(detect) : machines;
     const updates = await Promise.allSettled(list.map(machine =>
-      api('overview', undefined, machine.id, AbortSignal.timeout(6500))));
+      api('overview', undefined, machine.id, undefined, 15000)));
     if (revision !== refreshRequest || $('app').hidden) return false;
     setConnectionProblem('inventory', Boolean(stream?.readyState !== EventSource.OPEN && list.length && updates.every(result =>
       result.status === 'rejected' && isConnectionError(result.reason))));
@@ -2447,7 +2476,7 @@ quotaDialog.addEventListener('cancel', event => { event.preventDefault(); closeQ
 let discoveryRequest = 0;
 async function discoverMachines(detect = false) {
   const request = ++discoveryRequest;
-  const result = await api('machines' + (detect ? '?refresh=1' : ''), undefined, primaryMachine, AbortSignal.timeout(6500));
+  const result = await api('machines' + (detect ? '?refresh=1' : ''), undefined, primaryMachine, undefined, 15000);
   if (request === discoveryRequest) machines = sideFrame ? result.machines.filter(item => item.id === machineId) : result.machines;
   if ($('machines-dialog').open) drawMachines();
   return machines;
@@ -2576,7 +2605,7 @@ function clearSessionLoading() {
 }
 async function loadSession(id, target, signal) {
   const path = 'sessions/' + encodeURIComponent(id);
-  const data = await api(path, undefined, target, signal);
+  const data = await api(path, undefined, target, signal, 15000);
   // Older hosts can cut the first page inside a long batch of tools.
   if (!data.older || data.includesRecentReplies) return data;
   const countReplies = messages => messages.filter(message => message?.role === 'agent' && message.text?.trim()).length;
@@ -2584,7 +2613,7 @@ async function loadSession(id, target, signal) {
   let replies = countReplies(pages[0]);
   let before = data.older;
   while (before && replies < 3) {
-    const previous = await api(path + '/messages?before=' + before, undefined, target, signal);
+    const previous = await api(path + '/messages?before=' + before, undefined, target, signal, 15000);
     if (previous.older && previous.older >= before) throw new Error(t('Could not load more history. Reopen the chat.'));
     const messages = previous.messages ?? [];
     pages.push(messages);
@@ -2611,8 +2640,7 @@ async function openSession(id, { reset = false, keep = false, target = machineId
   if (!reset) showSessionLoading(id, target);
   let data;
   try {
-    data = await readWithReconnect('history', () => loadSession(id, target,
-      AbortSignal.any?.([controller.signal, AbortSignal.timeout(10000)]) ?? controller.signal), controller.signal);
+    data = await readWithReconnect('history', () => loadSession(id, target, controller.signal), controller.signal);
   }
   catch (error) {
     if (request !== navigation) return;
@@ -2730,7 +2758,7 @@ function watchSession(id, target, revision, cursor) {
     clearTimeout(streamRetry);
     streamRetry = setTimeout(async () => {
       if (!current()) return;
-      const auth = await api('auth', undefined, primaryMachine, AbortSignal.timeout(6500)).catch(() => undefined);
+      const auth = await api('auth', undefined, primaryMachine, undefined, 15000).catch(() => undefined);
       if (!current()) return;
       if (auth?.signedIn === false) loginView();
       else watchSession(id, target, revision, cursor);
@@ -3406,7 +3434,7 @@ $('login-form').onsubmit = async event => {
 };
 history.scrollRestoration = 'manual';
 setConnectionProblem('offline', !navigator.onLine);
-const auth = await readWithReconnect('auth', () => api('auth', undefined, primaryMachine, AbortSignal.timeout(6500)))
+const auth = await readWithReconnect('auth', () => api('auth', undefined, primaryMachine, undefined, 15000))
   .catch(() => ({ signedIn: false }));
 authMode = auth.mode;
 if (auth.signedIn) await start();
