@@ -317,6 +317,8 @@ const zh = {
   "Choose a valid state.": "请选择有效的状态。",
   "Invalid cursor.": "游标无效。",
   "The database connection failed while saving the chat.": "保存对话时数据库连接中断。",
+  "This question already has an answer.": "这个问题已经回答过了。",
+  "Question not found.": "找不到这个问题。",
   "This question has ended.": "这个问题已结束。",
   "This question closed before the answer was delivered.": "这个问题已关闭，答案未送达。",
   "This turn cannot take guidance right now. Your draft is kept.": "当前轮次暂时无法接收引导。草稿已保留。",

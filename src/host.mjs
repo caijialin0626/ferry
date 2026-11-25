@@ -291,6 +291,11 @@ async function execute(session, run, input, cwd, options, images) {
           publishTurnStatus();
           return;
         }
+        if (type === 'asyncQuestion') {
+          flush(true);
+          message('async-question-' + randomUUID(), 'question', JSON.stringify(value), outputLength);
+          return;
+        }
         if (type === 'image') {
           const image = { ...value, id: randomUUID(), name: 'Generated image' };
           const markdown = '\n\n![Generated image](/api/attachments/' + image.id + ')\n\n';
@@ -619,14 +624,6 @@ const server = createServer(async (req, res) => {
     }
     const session = await getSession(id);
     if (!session) throw new HttpError(404, 'Chat not found.');
-    if (req.method === 'POST' && action === 'answer') {
-      const input = await body(req, 32768);
-      if (typeof input.id !== 'string' || !/^question-[a-f0-9-]{36}$/.test(input.id)) throw new HttpError(400, 'Invalid question.');
-      const run = running.get(id);
-      if (run?.answer) await run.answer(input.id, input.answers);
-      else if (!await answeredQuestion(id, input.id)) throw new HttpError(409, 'This question has ended.');
-      return json(res, 200, { id: input.id });
-    }
     if (req.method === 'POST' && action === 'branches') {
       const input = await body(req);
       const { id: branchId, kind } = input;
@@ -672,8 +669,34 @@ const server = createServer(async (req, res) => {
         WHERE id=$4 RETURNING *`, [pinned, archived, title, id]);
       return json(res, 200, publicSession(result));
     }
-    if (req.method === 'POST' && action === 'send') {
-      const input = await body(req, sendLimit);
+    if (req.method === 'POST' && (action === 'send' || action === 'answer')) {
+      let input = await body(req, action === 'send' ? sendLimit : 32768);
+      let receipt;
+      if (action === 'answer') {
+        const questionId = input.id;
+        if (typeof questionId !== 'string' || !/^(?:async-)?question-[a-f0-9-]{36}$/.test(questionId)) {
+          throw new HttpError(400, 'Invalid question.');
+        }
+        const run = running.get(id);
+        if (!questionId.startsWith('async-')) {
+          if (run?.answer) await run.answer(questionId, input.answers);
+          else if (!await answeredQuestion(id, questionId)) throw new HttpError(409, 'This question has ended.');
+          return json(res, 200, { id: questionId });
+        }
+        const row = await one(db, "SELECT text FROM messages WHERE session=$1 AND id=$2 AND role='question'", [id, questionId]);
+        if (!row) throw new HttpError(404, 'Question not found.');
+        const questions = JSON.parse(row.text);
+        const answers = userAnswers(questions, input.answers);
+        receipt = JSON.stringify({ id: questionId, answers });
+        const previous = await one(db, "SELECT text FROM messages WHERE session=$1 AND id=$2 AND role='answer'", [id, questionId + '-answer']);
+        if (previous) {
+          if (previous.text !== receipt) throw new HttpError(409, 'This question already has an answer.');
+          return json(res, 200, { id: questionId });
+        }
+        const reply = questions.map(q => ({ question: q.question, answer: answers[q.id][0] }));
+        input = { id: questionId, text: '<send_user_message_question_reply>\n' + JSON.stringify(reply) +
+          '\n</send_user_message_question_reply>', steer: turnStatus(run).turn ?? undefined };
+      }
       const images = readImages(input.images);
       const video = readVideo(input.video);
       if (adapters.get(session.agent)?.mediaInput === false && (images.length || video)) {
@@ -691,7 +714,7 @@ const server = createServer(async (req, res) => {
       }
       if (steer && adapters.get(session.agent)?.steer === false) throw new HttpError(409, 'Wait for the current turn to finish before sending.');
       const key = createHash('sha256').update(JSON.stringify([input.text, model, effort, images.map(image =>
-        [image.name, image.mediaType, image.content.toString('base64')]), ...(steer ? [steer] : []),
+        [image.name, image.mediaType, image.content.toString('base64')]), ...(steer && !receipt ? [steer] : []),
         ...(video ? [[video.name, video.mediaType, createHash('sha256').update(video.content).digest('hex')]] : [])])).digest('hex');
       function verifyPrevious(previous) {
         if (previous && (previous.request_key ? previous.request_key !== key : previous.text !== input.text || images.length || video)) {
@@ -724,6 +747,7 @@ const server = createServer(async (req, res) => {
         if (video) attachments.push({ ...video, content: Buffer.alloc(0) });
         await addMessage(client, id, message, role, input.text, attachments.map(image =>
           imageMetadata({ id: image.id, name: image.name, media_type: image.mediaType })), offset);
+        if (receipt) await addMessage(client, id, input.id + '-answer', 'answer', receipt);
         for (const [position, image] of attachments.entries()) {
           await addAttachment(client, id, message, image, position);
         }

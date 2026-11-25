@@ -37,7 +37,8 @@ else {
       children.push(child);
     }
     start('host', { FERRY_HOST_DATA: join(tmp, 'host'), FERRY_HOST_PORT: hostPort, FERRY_AGY_BIN: cli,
-      FERRY_CODEX_BIN: join(tmp, 'absent'), FERRY_CLAUDE_BIN: join(tmp, 'absent') });
+      FERRY_CODEX_BIN: join(process.cwd(), '.github/maintenance/codex-question-fixture.cjs'),
+      FERRY_CODEX_APP_SERVER_SOCKET: join(tmp, 'absent.sock'), FERRY_CLAUDE_BIN: join(tmp, 'absent') });
     start('web', { FERRY_WEB_DATA: join(tmp, 'web'), FERRY_WEB_LOGIN_TOKEN: code,
       FERRY_HOST_URL: 'http://127.0.0.1:' + hostPort, FERRY_WEB_PORT: new URL(url).port });
     for (let i = 0; i < 100; i++) {
@@ -70,7 +71,7 @@ else {
     await page.locator('#login-code').fill(code);
     await page.locator('#login-code').press('Enter');
     await page.locator('#new-chat').click();
-    await page.waitForFunction(() => document.querySelector('#agent')?.value === 'agy');
+    await page.locator('#agent').selectOption('agy', { force: true });
     await page.locator('#prompt').fill('hello from the browser');
     await page.locator('#send').click();
     const reply = page.locator('#messages').getByText('Browser reply: hello from the browser', { exact: true });
@@ -78,6 +79,35 @@ else {
     await page.reload();
     await reply.waitFor();
     await appearance('dark');
+    for (const [prompt, method] of [['ask-live', 'turn/steer'], ['ask-idle', 'turn/start']]) {
+      const created = await page.request.post(url + '/api/sessions', { headers: { origin: url }, data: { project: null, agent: 'codex' } });
+      if (!created.ok()) throw new Error('Could not create Codex test chat: ' + await created.text());
+      const { id } = await created.json();
+      await page.goto(url + '/?session=' + id);
+      await page.locator('#prompt').fill(prompt);
+      await page.locator('#send').click();
+      const card = page.locator('.interactive-question');
+      await card.waitFor();
+      if (prompt === 'ask-idle') {
+        await page.locator('#stop').waitFor({ state: 'hidden' });
+        await page.reload();
+      }
+      await card.getByRole('radio', { name: 'Blue' }).check();
+      await card.locator('.question-freeform').last().fill('Sample');
+      await card.locator('[type=submit]').click();
+      await page.locator('.markdown').getByText('Received via ' + method).waitFor();
+      await page.reload();
+      await card.locator('.question-receipt').getByText('Blue', { exact: true }).waitFor();
+      const historyUrl = url + '/api/sessions/' + id;
+      const history = await (await page.request.get(historyUrl)).json();
+      const question = history.messages.find(message => message.role === 'question');
+      const answerAgain = color => page.request.post(historyUrl + '/answer', { headers: { origin: url },
+        data: { id: question.id, answers: { 0: [color], 1: ['Sample'] } } });
+      if (!(await answerAgain('Blue')).ok() || (await answerAgain('Red')).status() !== 409) {
+        throw new Error('Retrying the same question must preserve the first answer');
+      }
+      if (await page.locator('.markdown li').count()) throw new Error('Questions were also rendered as a list');
+    }
     console.log('Browser login, chat, native reply and persisted history passed.');
   } finally {
     await browser?.close();
