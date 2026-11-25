@@ -372,6 +372,8 @@ async function runCodexConnection({ file, cwd, nativeId, prompt, model, effort, 
   const initialEvents = [];
   let turnFinished;
   const streamedItems = new Set();
+  const asyncItems = new Set();
+  const completedMessages = new Set();
   const questions = new Map();
   let previousItem;
   let textTail = '';
@@ -432,17 +434,28 @@ async function runCodexConnection({ file, cwd, nativeId, prompt, model, effort, 
       return;
     }
     if (msg.method === 'item/agentMessage/delta' && params?.delta) {
+      if (asyncItems.has(params.itemId) || completedMessages.has(params.itemId)) return;
       streamedItems.add(params.itemId);
       agentText(params.itemId, params.delta);
     }
     if (msg.method === 'item/started') {
       const item = params?.item;
+      if (item?.type === 'agentMessage' && (item.delivery === 'async' || item.questions?.length)) asyncItems.add(item.id);
       if (item?.type === 'commandExecution') emit('tool', 'Shell · ' + (item.command || 'Run command'));
       if (item?.type === 'fileChange') emit('tool', 'Update project files');
       if (item?.type === 'mcpToolCall') emit('tool', item.tool || 'MCP tool');
     }
-    if (msg.method === 'item/completed' && params?.item?.type === 'agentMessage' && !streamedItems.has(params.item.id)) {
-      agentText(params.item.id, params.item.text);
+    if (msg.method === 'item/completed' && params?.item?.type === 'agentMessage') {
+      const item = params.item;
+      if (completedMessages.has(item.id)) return;
+      completedMessages.add(item.id);
+      asyncItems.delete(item.id);
+      const questions = Array.isArray(item.questions) && userQuestions(item.questions.map((question, index) => ({
+        id: String(index), question: question?.title, isOther: true,
+        options: Array.isArray(question?.options) ? question.options.map(label => ({ label })) : [],
+      })));
+      if (questions) emit('asyncQuestion', questions);
+      else if (!streamedItems.has(item.id)) agentText(item.id, item.text);
     }
     if (msg.method === 'item/completed' && params?.item?.type === 'imageGeneration' && !params.item.failure) {
       const { result, savedPath } = params.item;
