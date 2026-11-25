@@ -108,10 +108,33 @@ function previewLink(link, source) {
 }
 
 /* ---------- markdown ---------- */
+// File references belong to the execution machine. Render their labels without
+// asking the browser to navigate to a local file or fetching the destination.
+function fileReference(state, silent) {
+  const start = state.pos;
+  if (state.src[start] !== '[' || state.src[start - 1] === '!') return false;
+  const labelEnd = state.md.helpers.parseLinkLabel(state, start, true);
+  if (labelEnd < 0) return false;
+  const opening = /^[ \t]*(?:\n[ \t]*)?\([ \t]*(?=<?file:\/\/\/[^/])/i.exec(state.src.slice(labelEnd + 1));
+  if (!opening) return false;
+  const destination = state.md.helpers.parseLinkDestination(state.src, labelEnd + 1 + opening[0].length, state.posMax);
+  if (!destination.ok || state.src[destination.pos] !== ')') return false;
+  if (!silent) {
+    const label = state.src.slice(start + 1, labelEnd).replace(/^`([^`]+)`$/, '$1');
+    const lines = /#L(\d+)(?:-L?(\d+))?$/i.exec(destination.str);
+    const suffix = lines ? ':' + lines[1] + (lines[2] ? '–' + lines[2] : '') : '';
+    const file = state.push('code_inline', 'code', 0);
+    file.content = (label || destination.str.split('#')[0].split('/').pop()) + suffix;
+    file.attrSet('title', destination.str);
+  }
+  state.pos = destination.pos + 1;
+  return true;
+}
 const md = (() => {
   if (typeof window.markdownit !== 'function') return null;
   try {
     const parser = window.markdownit({ html: false, linkify: true, breaks: false });
+    parser.inline.ruler.before('link', 'file_reference', fileReference);
     const fallback = (tokens, index, options, env, self) => self.renderToken(tokens, index, options);
     const linkOpen = parser.renderer.rules.link_open || fallback;
     parser.renderer.rules.link_open = (tokens, index, options, env, self) => {
@@ -180,6 +203,8 @@ function sanitize(root) {
       } else if (name === 'class' && node.tagName === 'CODE') {
         const lang = /language-([\w+#.-]+)/.exec(value);
         node.className = lang ? 'language-' + lang[1] : '';
+      } else if (name === 'title' && node.tagName === 'CODE') {
+        continue;
       } else if (!['target', 'rel', 'start'].includes(name)) node.removeAttribute(name);
     }
   }

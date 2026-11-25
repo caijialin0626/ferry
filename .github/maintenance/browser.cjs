@@ -30,7 +30,7 @@ else {
     const output = text_delta => console.log(JSON.stringify({event:'step_update',step_update:{step_type:'agent_response',text_delta}}));
     output('Browser reply: ');
     setTimeout(() => {
-      output(text);
+      output(text + '\\n\\n- Inspect [sample.go](file:///demo/sample.go#L12-L19) and [guide](https://example.org/guide).');
       console.log(JSON.stringify({event:'result',result:{conversation_id:'demo',status:'SUCCESS'}}));
     }, 150);
   });
@@ -81,6 +81,13 @@ else {
     await page.locator('#send').click();
     const reply = page.locator('#messages').getByText('Browser reply: hello from the browser', { exact: true });
     await reply.waitFor();
+    async function checkFileReference() {
+      const item = page.locator('.markdown li').filter({ hasText: 'Inspect' });
+      await item.locator('code[title="file:///demo/sample.go#L12-L19"]').filter({ hasText: /^sample\.go:12–19$/ }).waitFor();
+      if ((await item.innerText()).includes('file:///')) throw new Error('Local file URI leaked into visible reply');
+      await item.locator('a[href="https://example.org/guide"]').waitFor();
+    }
+    await checkFileReference();
     const sessionId = new URL(page.url()).searchParams.get('session');
     const historyUrl = url + '/api/sessions/' + sessionId;
     const snapshot = await (await page.request.get(historyUrl)).json();
@@ -90,6 +97,7 @@ else {
     await latestTime.waitFor();
     await page.reload();
     await reply.waitFor();
+    await checkFileReference();
     await latestTime.waitFor();
     // Older hosts only know when output began, even if more text followed a steer.
     await page.route(historyUrl, route => route.fulfill({ json: { ...snapshot, messages: [
