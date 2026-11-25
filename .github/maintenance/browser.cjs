@@ -52,7 +52,7 @@ else {
     }
     browser = process.env.SMOKE_WEBKIT === '1' ? await webkit.launch() : await chromium.launch({ executablePath: process.env.CHROME_BIN || '/usr/bin/chromium',
       args: ['--no-sandbox', '--disable-dev-shm-usage'] });
-    const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, colorScheme: 'dark' });
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: process.env.SMOKE_WEBKIT === '1', colorScheme: 'dark' });
     // Verify the first paint and live system changes without reloading or a saved theme preference.
     async function appearance(scheme) {
       await page.waitForFunction(expected => {
@@ -117,8 +117,16 @@ else {
       await card.locator('.question-freeform').last().fill('Sample');
       await card.locator('[type=submit]').click();
       await page.locator('.markdown').getByText('Received via ' + method).waitFor();
+      async function checkAnswer() {
+        const message = page.locator('.message.user').filter({ has: page.locator('.question-reply') });
+        await message.getByText('Blue', { exact: true }).waitFor();
+        await message.getByText('Sample', { exact: true }).waitFor();
+        await message.locator('time').waitFor();
+        if (await page.locator('#messages .question-reply').count() !== 1) throw new Error('Duplicate answer card');
+      }
+      await checkAnswer();
       await page.reload();
-      await card.locator('.question-receipt').getByText('Blue', { exact: true }).waitFor();
+      await checkAnswer();
       const historyUrl = url + '/api/sessions/' + id;
       const history = await (await page.request.get(historyUrl)).json();
       const question = history.messages.find(message => message.role === 'question');
@@ -128,6 +136,17 @@ else {
         throw new Error('Retrying the same question must preserve the first answer');
       }
       if (await page.locator('.markdown li').count()) throw new Error('Questions were also rendered as a list');
+    }
+    await page.route('**/api/quota?*', route => route.fulfill({ json: { accounts: [] } }));
+    await page.locator('#quota-footer').click();
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.waitForFunction(() => {
+        const select = document.getElementById('quota-machine-trigger').getBoundingClientRect();
+        const refresh = document.getElementById('quota-refresh').getBoundingClientRect();
+        return select.width > 0 && refresh.width > 0 && Math.abs(select.top - refresh.top) < 1 &&
+          Math.abs(select.bottom - refresh.bottom) < 1;
+      }, undefined, { timeout: 3000 });
     }
     console.log('Browser login, chat, native reply and persisted history passed.');
   } finally {
