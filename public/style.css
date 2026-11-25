@@ -1116,7 +1116,7 @@ dialog::backdrop { background: rgb(18 28 22 / .3); }
 /* quotas */
 #quota-dialog { width: min(500px, calc(100% - 32px)); }
 .quota-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; padding-bottom: 2px; }
-.quota-machine-field { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: 12px; }
+.quota-machine-field { display: grid; gap: 4px; min-width: 0; margin: 0; color: var(--muted); font-size: 12px; }
 .quota-machine-field :is(select, .select-trigger) { width: 100%; min-width: 0; min-height: 34px; }
 .quota-results { min-height: 0; overflow-y: auto; display: grid; gap: 16px; scrollbar-width: thin; scrollbar-color: var(--scrollbar); }
 .quota-group { display: grid; gap: 8px; }
@@ -1290,7 +1290,7 @@ dialog::backdrop { background: rgb(18 28 22 / .3); }
   .btn { min-height: 40px; }
   .machine-quota, .schedule-item .btn, .banner .btn { min-height: 36px; }
   .chat-destination :is(select, .select-trigger) { min-height: 44px; border-radius: 20px; }
-  .quota-machine-field .select-trigger, #schedule-form .select-trigger { min-height: 44px; }
+  .quota-machine-field .select-trigger, #quota-refresh, #schedule-form .select-trigger { min-height: 44px; }
   .resizer { width: 16px; right: -8px; }
   .resizer::after { left: 7px; }
 }

@@ -2008,6 +2008,8 @@ function drawTurn(turn) {
     if (fragment) lastReply = nodes.push(fragment) - 1;
     if (steer) { nodes.push(steer.node); continue; }
     if (question) {
+      // An async answer is shown at its send position, with the user's timestamp.
+      if (question.id.startsWith('async-question-') && rendered.has(question.id + '-user')) continue;
       question.node ??= interactiveQuestion(question);
       if (question.node) { question.drawQuestion(); nodes.push(question.node); }
       continue;
