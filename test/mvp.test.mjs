@@ -683,6 +683,34 @@ require('node:readline').createInterface({input:process.stdin}).on('line',raw=>{
   assert.deepEqual(agyMessages.filter(m => m.role === 'tool').map(m => m.text), ['Shell · pwd']);
   assert.equal(agyMessages.at(-1).text, 'start:hello');
   assert.equal((await native('next')).at(-1).text, 'resume:next');
+  await call(agyUrl + '/send', { id: randomUUID(), text: 'ask-fixture' }, 202);
+  let form;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const snapshot = await call(agyUrl);
+    form = snapshot.messages.find(message => message.role === 'question');
+    if (form) {
+      assert.equal(snapshot.session.activeTurn, null);
+      assert.equal(JSON.parse(form.text)[1].multiple, true);
+      break;
+    }
+    await new Promise(resolve => setTimeout(resolve, 35));
+  }
+  assert.ok(form);
+  // Start and continue the independent side while the parent is waiting.
+  await call(agyUrl + '/branches', { id: randomUUID(), kind: 'fork' }, 409);
+  const aside = await call(agyUrl + '/branches', { id: randomUUID(), kind: 'side' }, 201);
+  const asideUrl = 'sessions/' + aside.id;
+  for (const output of ['Side started.', 'Side continued.']) {
+    await call(asideUrl + '/send', { id: randomUUID(), text: 'side-only input' }, 202);
+    const result = await finished(asideUrl);
+    assert.equal(result.session.native_id, 'agy-native-side');
+    assert.equal(result.messages.at(-1).text, output);
+  }
+  const selection = { id: form.id, answers: { color: ['Blue'], fruits: ['Apple','Pear','Fig'] } };
+  await Promise.all([call(agyUrl + '/answer', selection), call(agyUrl + '/answer', selection)]);
+  const answered = await finished(agyUrl);
+  assert.equal(answered.messages.at(-1).text, 'Form received.');
+  assert.ok(!answered.messages.some(row => row.text === 'side-only input'));
   const picture = { name: 'fixture.png', mediaType: 'image/png', data: png };
   // Distinct PNG sizes make attachment order observable in the fixture reply.
   const second = { ...picture, name: 'other.png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC' };

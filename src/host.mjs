@@ -277,9 +277,15 @@ async function execute(session, run, input, cwd, options, images) {
   try {
     const adapter = adapters.get(session.agent);
     const source = !session.native_id && session.branch_parent && await getSession(session.branch_parent);
+    let side;
+    if (session.agent === 'agy' && session.branch_kind === 'side') {
+      const snapshot = await one(db, 'SELECT context FROM side_contexts WHERE session=$1', [session.id]);
+      if (!snapshot) throw new Error('Side chat context is missing.');
+      side = { directory: join(data, 'side-chats', session.id), context: snapshot.context };
+    }
     await adapter.run({
       file: adapter.file, cwd, nativeId: session.native_id, prompt: input, signal: controller.signal, ...options, images,
-      branchKind: session.branch_kind, forkSource: source?.native_id,
+      branchKind: session.branch_kind, forkSource: source?.native_id, side,
       ...(session.agent === 'codex' && session.codex_imported && { isolatedHome: join(data, 'codex-imports') }),
       ask,
       setSteer(steer) {
@@ -480,6 +486,7 @@ async function createBranch(source, id, kind) {
   if (!source.native_id || source.branch_kind === 'side' || !adapter?.file || !adapter.branch) {
     throw new HttpError(409, 'Run a turn in the source chat before forking or starting a side chat.');
   }
+  if (adapter.sideOnly && kind !== 'side') throw new HttpError(409, 'This agent supports side chats only.');
   if (source.archived || project.archived) throw new HttpError(409, 'Restore it from the archive first.');
   const cwd = await directory(source.project === recentProject ? recentWorkspace : project.directory);
   const cutoff = kind === 'fork' && (await one(db, 'SELECT COALESCE(max(position),0) AS position FROM messages WHERE session=$1', [source.id])).position;
@@ -497,6 +504,23 @@ async function createBranch(source, id, kind) {
       VALUES ($1,$2,$3,$4,$5,'idle',$6,$7,$8,$9,$10,$11) RETURNING *`,
       [id, source.project, source.agent, nativeId, title, Date.now(), source.model, source.effort,
         Boolean(source.codex_imported), source.id, kind]);
+    if (adapter.sideOnly && kind === 'side') {
+      // Capture at creation so later parent turns never leak into the side chat.
+      const { rows } = await client.query(`
+        SELECT role, substr(text,-8192) AS text FROM messages
+        WHERE session=$1 AND role IN ('user','agent','steer','answer','question') AND text<>''
+        ORDER BY position DESC LIMIT 96`, [source.id]);
+      let remaining = 64000;
+      const messages = [];
+      for (const row of rows) {
+        const text = row.text.slice(-remaining);
+        messages.unshift({ role: row.role, text });
+        remaining -= text.length;
+        if (!remaining) break;
+      }
+      await client.query('INSERT INTO side_contexts(session,context) VALUES ($1,$2)',
+        [id, JSON.stringify({ workspace: cwd, messages })]);
+    }
     if (kind === 'fork') await client.query(`
       INSERT INTO messages(session,id,role,text,reply_offset,attachment_session,created_at,updated_at)
       SELECT $1,id,role,text,reply_offset,COALESCE(attachment_session,session),created_at,updated_at FROM messages

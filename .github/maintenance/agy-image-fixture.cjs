@@ -8,8 +8,11 @@ let sessionId;
 let loaded = false;
 let model;
 let activeBrowserPrompt;
+let formPrompt;
+const side = process.argv.includes('ferry-reader');
 createInterface({ input: process.stdin }).on('line', async line => {
-  const { id, method, params } = JSON.parse(line);
+  const msg = JSON.parse(line);
+  const { id, method, params } = msg;
   let result = {};
   const send = value => console.log(JSON.stringify({ jsonrpc: '2.0', ...value }));
   const tool = (i, cmd, summary) => send({ method: 'session/update', params: { sessionId, update: {
@@ -18,8 +21,13 @@ createInterface({ input: process.stdin }).on('line', async line => {
   const update = content => send({ method: 'session/update', params: { sessionId, update: {
     sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: content },
   } } });
-  if (method === 'initialize') result.agentCapabilities = { promptCapabilities: { image: true }, loadSession: true };
-  else if (method === 'session/new') result.sessionId = sessionId = 'agy-native-fixture';
+  if (id === 'native-form' && !method) {
+    assert.deepEqual(msg.result, { action: 'accept', content: { color: '2', fruits: ['a', 'b'], fruits_other: 'Fig' } });
+    update('Form received.');
+    return send({ id: formPrompt, result: { stopReason: 'end_turn' } });
+  }
+  if (method === 'initialize') result.agentCapabilities = { promptCapabilities: { image: true, embeddedContext: true }, loadSession: true };
+  else if (method === 'session/new') result.sessionId = sessionId = side ? 'agy-native-side' : 'agy-native-fixture';
   else if (method === 'session/load') {
     sessionId = params.sessionId;
     loaded = true;
@@ -34,7 +42,24 @@ createInterface({ input: process.stdin }).on('line', async line => {
       assert.equal(Buffer.from(image.data, 'base64').subarray(1, 4).toString(), 'PNG');
     }
     const text = params.prompt.find(block => block.type === 'text')?.text ?? '';
-    if (!images.length && process.env.FIXTURE_BRAIN) {
+    if (text === 'ask-fixture') {
+      formPrompt = id;
+      return send({ id: 'native-form', method: 'elicitation/create', params: { sessionId, mode: 'form', requestedSchema: {
+        type: 'object', properties: {
+          color: { type: 'string', title: 'Color?', oneOf: [{ const: '1', title: 'Red' }, { const: '2', title: 'Blue' }] },
+          fruits: { type: 'array', title: 'Fruits?', items: { anyOf: [{ const: 'a', title: 'Apple' }, { const: 'b', title: 'Pear' }] } },
+          fruits_other: { type: 'string', title: 'Other' },
+        },
+      } } });
+    }
+    if (side) {
+      assert.ok(!process.argv.includes('--dangerously-skip-permissions'));
+      assert.ok(fs.existsSync('.agents/agents/ferry-reader.md'));
+      const snapshot = params.prompt.find(block => block.type === 'resource');
+      if (loaded) assert.equal(snapshot, undefined);
+      else assert.ok(JSON.parse(snapshot.resource.text).messages.some(row => row.text === 'ask-fixture'));
+      update(loaded ? 'Side continued.' : 'Side started.');
+    } else if (!images.length && process.env.FIXTURE_BRAIN) {
       if (activeBrowserPrompt) {
         send({ id: activeBrowserPrompt, result: { stopReason: 'end_turn' } });
         activeBrowserPrompt = id;
