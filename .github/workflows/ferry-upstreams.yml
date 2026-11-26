@@ -1,26 +1,26 @@
-name: Check upstream CLIs
-on:
-  schedule:
-    - cron: '37 3 * * *'
-  workflow_dispatch:
-
+name: Request quota dialog review
+on: workflow_dispatch
 permissions: {}
 jobs:
-  check:
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+  review:
+    if: github.ref == 'refs/heads/ferry/request-review-quota-scroll' && github.actor == 'caijialin0626'
     runs-on: ubuntu-latest
     timeout-minutes: 3
-    strategy:
-      fail-fast: false
-      matrix:
-        cli: [codex, claude, agy]
     permissions:
-      actions: write
+      contents: read
+      pull-requests: write
     steps:
-      - name: Queue a compatibility check
+      - name: Open the tested change for review
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          BRANCH: ${{ github.event.repository.default_branch }}
-          CLI: ${{ matrix.cli }}
-        run: gh workflow run ferry-issues.yml -R "$REPO" --ref "$BRANCH" -f mode=upstream -f cli="$CLI"
+        run: |
+          set -eu
+          head=ferry/quota-scroll
+          test "$(gh api "repos/$REPO/git/ref/heads/$head" --jq .object.sha)" = 79c1e2e9afa16746cb5fcbca3ddc9ac20748c4c0
+          cat > "$RUNNER_TEMP/review.md" <<'BODY'
+          Size the quota dialog content within its available height so only the results list scrolls. The close button, machine selector and refresh button stay in place.
+
+          Checked long quota lists at mobile and desktop widths in Chromium and WebKit. The browser regression checks that the dialog has no vertical overflow and the last quota entry is reachable.
+          BODY
+          gh pr create -R "$REPO" --base main --head "$head" --title 'Keep one scrollbar in the account quota dialog' --body-file "$RUNNER_TEMP/review.md"
