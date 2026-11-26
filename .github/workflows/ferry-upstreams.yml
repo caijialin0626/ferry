@@ -1,26 +1,28 @@
-name: Check upstream CLIs
-on:
-  schedule:
-    - cron: '37 3 * * *'
-  workflow_dispatch:
-
+name: Request tool progress review
+on: workflow_dispatch
 permissions: {}
 jobs:
-  check:
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+  review:
+    if: github.ref == 'refs/heads/ferry/request-review-agy-tools-e1ce3fc' && github.actor == 'caijialin0626'
     runs-on: ubuntu-latest
     timeout-minutes: 3
-    strategy:
-      fail-fast: false
-      matrix:
-        cli: [codex, claude, agy]
     permissions:
-      actions: write
+      contents: read
+      pull-requests: write
     steps:
-      - name: Queue a compatibility check
+      - name: Open the tested change for review
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          BRANCH: ${{ github.event.repository.default_branch }}
-          CLI: ${{ matrix.cli }}
-        run: gh workflow run ferry-issues.yml -R "$REPO" --ref "$BRANCH" -f mode=upstream -f cli="$CLI"
+        run: |
+          set -eu
+          head=ferry/agy-tool-progress
+          test "$(gh api "repos/$REPO/git/ref/heads/$head" --jq .object.sha)" = e1ce3fceed33f9961b8cf717964994f4ac9ff164
+          cat > "$RUNNER_TEMP/review.md" <<'BODY'
+          Keep recording tools after the 100th action and include the current turn in the first history page. Display native Antigravity tool summaries as they become available, keeping command details inside the expanded action. Missing transcripts fall back to the streamed tool events.
+
+          Reconstruct previously capped batches when the prompt uniquely identifies a native turn and both histories agree that the tools precede the reply. This recovery is read-only.
+
+          Includes a browser regression for 105 actions with live summaries and reload, and coverage for restoring a capped batch while leaving ambiguous histories alone.
+          BODY
+          gh pr create -R "$REPO" --base main --head "$head" --title 'Show Antigravity action summaries and keep counting past 100' --body-file "$RUNNER_TEMP/review.md"
