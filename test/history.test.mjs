@@ -60,3 +60,38 @@ test('Claude history restores native text and commands in order after a legacy t
   await db.query("UPDATE messages SET text='结果不一致。' WHERE session='chat' AND role='agent'");
   assert.deepEqual(await messages(true, cwd), await messages(false));
 });
+
+test('agy history restores a legacy capped batch only from a matching native turn', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'ferry-agy-history-'));
+  const previous = process.env.FERRY_AGY_HISTORY_DIR;
+  process.env.FERRY_AGY_HISTORY_DIR = root;
+  const db = openDatabase(':memory:');
+  t.after(async () => {
+    if (previous === undefined) delete process.env.FERRY_AGY_HISTORY_DIR;
+    else process.env.FERRY_AGY_HISTORY_DIR = previous;
+    await db.end();
+    await rm(root, { recursive: true, force: true });
+  });
+  const nativeId = randomUUID();
+  const folder = join(root, nativeId, '.system_generated', 'logs');
+  await mkdir(folder, { recursive: true });
+  const prompt = { type: 'USER_INPUT', step_index: 0, content: '<USER_REQUEST>sample</USER_REQUEST>' };
+  const planner = { type: 'PLANNER_RESPONSE', step_index: 1, tool_calls: Array.from({ length: 113 }, (_, i) => ({
+    name: 'run_command', args: { CommandLine: JSON.stringify('example ' + i), toolSummary: JSON.stringify('Inspect ' + i) },
+  })) };
+  const transcript = join(folder, 'transcript.jsonl');
+  await db.query("INSERT INTO projects(id,directory,name) VALUES ('p','/tmp','sample')");
+  await db.query("INSERT INTO sessions(id,project,agent,native_id,title,state,updated) VALUES ('s','p','agy',$1,'sample','idle',0)", [nativeId]);
+  await db.query("INSERT INTO messages(session,id,role,text) VALUES ('s','request','user','sample')");
+  for (let i = 0; i < 100; i++) {
+    await db.query("INSERT INTO messages(session,id,role,text,reply_offset) VALUES ('s',$1,'tool',$2,0)", ['request-tool-' + (i+1), 'Shell · example ' + i]);
+  }
+  const read = async () => (await readHistory(db, 's', Number.MAX_SAFE_INTEGER, true)).messages;
+  assert.equal((await read()).length, 101);
+  await writeFile(transcript, [prompt, planner].map(row => JSON.stringify(row)).join('\n') + '\n');
+  const rows = await read();
+  assert.equal(rows.length, 114);
+  assert.equal(rows.at(-1).text, 'Inspect 112\nShell · example 112');
+  await writeFile(transcript, [prompt, planner, prompt, planner].map(row => JSON.stringify(row)).join('\n') + '\n');
+  assert.equal((await read()).at(-1).text, 'Shell · example 99');
+});

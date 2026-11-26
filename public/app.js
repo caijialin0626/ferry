@@ -2740,7 +2740,14 @@ function watchSession(id, target, revision, cursor) {
     if (event.seq <= cursor) return;
     cursor = event.seq;
     if (event.type === 'message') addMessage(event.payload);
-    else if (event.type === 'delta') {
+    else if (event.type === 'toolDetail') {
+      const entry = rendered.get(event.payload.id);
+      if (entry?.role === 'tool') {
+        entry.text = event.payload.text;
+        entry.dirty = true;
+        pending.add(entry.turn);
+      }
+    } else if (event.type === 'delta') {
       const entry = rendered.get(event.payload.id);
       if (entry?.role === 'agent' && event.payload.text) {
         entry.updatedAt = event.payload.updated_at;

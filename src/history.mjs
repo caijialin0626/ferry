@@ -24,8 +24,10 @@ const historyBounds = `
       ORDER BY position DESC LIMIT 3
     ) AS replies
   ), bounds AS (
-    SELECT CASE WHEN r.first < n.first THEN r.first ELSE n.first END AS first
-    FROM normal_page n CROSS JOIN reply_page r
+    SELECT min(first) AS first FROM (
+      SELECT first FROM normal_page UNION ALL SELECT first FROM reply_page
+      UNION ALL SELECT max(position) FROM messages WHERE $3 AND session=$1 AND role='user' AND position<$2
+    ) AS candidates
   )`;
 
 export async function readHistory(db, id, before, initial, independentDirectory) {
@@ -58,6 +60,7 @@ export async function readHistory(db, id, before, initial, independentDirectory)
       : (await one(db, 'SELECT directory FROM projects WHERE id=$1', [session.project]))?.directory;
     page.messages = await restoreClaudeHistory(page.messages, session.native_id, cwd, ['running', 'stopping'].includes(session.state));
   }
+  if (page?.session.agent === 'agy') page.messages = await restoreAgyTools(page.messages, page.session.native_id);
   return page;
 }
 
@@ -166,4 +169,127 @@ async function restoreClaudeHistory(messages, nativeId, cwd, running) {
   } catch { return messages; }
   const matches = indexClaudeLog(log, new Set(turns.filter(turn => turn[0]?.role === 'user').map(turn => turn[0].text)));
   return turns.flatMap(turn => legacy.has(turn) ? restoreTurn(turn, matches.get(turn[0].text)) ?? turn : turn);
+}
+
+// Antigravity omits toolSummary from some stream-json versions. Its compact
+// transcript associates each planner call with the following native step index.
+function agyArgument(value) {
+  if (typeof value !== 'string') return '';
+  if (value.startsWith('"')) {
+    try { const decoded = JSON.parse(value); if (typeof decoded === 'string') return decoded.trim(); } catch {}
+  }
+  return value.trim();
+}
+
+export function agyToolText(detail, summary) {
+  const label = agyArgument(summary).replace(/\s+/g, ' ').slice(0, 512);
+  return label ? label + '\n' + detail : detail;
+}
+
+export function agyCallForTool(turn, index, detail) {
+  const call = turn.calls.get(index);
+  if (call && (call.detail === detail || (detail.endsWith('…') && call.detail.startsWith(detail.slice(0, -1))))) return call;
+  // Older rows have no native index; repeated identical commands may have
+  // different summaries. An ambiguous match must keep the saved description.
+  return turn.byDetail.get(detail);
+}
+
+export function agyTranscript(nativeId, prompts) {
+  let current;
+  const turns = [];
+  let offset = 0;
+  let inode;
+  function recordPlannerStep(row) {
+    if (row?.type === 'USER_INPUT' && typeof row.content === 'string') {
+      const prompt = /<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/.exec(row.content)?.[1] ?? row.content;
+      current = prompts.has(prompt.trim())
+        ? { prompt: prompt.trim(), calls: new Map(), byDetail: new Map(), hasReply: false, toolsAfterReply: false }
+        : undefined;
+      if (current) turns.push(current);
+    }
+    const turn = current;
+    if (!turn || row?.type !== 'PLANNER_RESPONSE' || !Number.isSafeInteger(row.step_index)) return;
+    if (typeof row.content === 'string' && row.content.trim()) turn.hasReply = true;
+    for (const [i, call] of (Array.isArray(row.tool_calls) ? row.tool_calls : []).entries()) {
+      if (!call || typeof call.name !== 'string') continue;
+      const command = agyArgument(call.args?.CommandLine);
+      const detail = (command ? 'Shell · ' + command : call.name).slice(0, 8192);
+      const summary = agyArgument(call.args?.toolSummary);
+      const tool = { name: call.name, detail, summary };
+      turn.calls.set(row.step_index + i + 1, tool);
+      // agy 1.5 stream-json abbreviates long command parameters at 512 characters.
+      const commandHead = [...command.slice(0, 1026)].slice(0, 512).join('');
+      const preview = commandHead.length < command.length ? 'Shell · ' + commandHead + '…' : detail;
+      tool.preview = preview;
+      for (const key of new Set([detail, preview])) {
+        if (!turn.byDetail.has(key)) turn.byDetail.set(key, tool);
+        else if (turn.byDetail.get(key)?.summary !== summary) turn.byDetail.set(key, null);
+      }
+      if (turn.hasReply) turn.toolsAfterReply = true;
+    }
+  }
+
+  async function refresh() {
+    if (!/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(nativeId || '')) return;
+    const root = process.env.FERRY_AGY_HISTORY_DIR || join(homedir(), '.gemini', 'antigravity-cli', 'brain');
+    let file;
+    try {
+      file = await open(join(root, nativeId, '.system_generated', 'logs', 'transcript.jsonl'));
+      const stat = await file.stat();
+      if (!stat.isFile()) return;
+      if (inode !== stat.ino || stat.size < offset) { turns.length = 0; current = undefined; offset = 0; inode = stat.ino; }
+      if (stat.size === offset) return;
+      let pending = Buffer.alloc(0);
+      for await (const chunk of file.createReadStream({ start: offset, end: stat.size - 1, autoClose: false })) {
+        const bytes = pending.length ? Buffer.concat([pending, chunk]) : chunk;
+        let start = 0;
+        for (let end; (end = bytes.indexOf(10, start)) >= 0; start = end + 1) {
+          offset += end + 1 - start;
+          let row;
+          try { row = JSON.parse(bytes.toString('utf8', start, end)); } catch { continue; }
+          recordPlannerStep(row);
+        }
+        pending = Buffer.from(bytes.subarray(start));
+      }
+    } catch { /* Native history is optional. Keep the stream-json fallback. */ }
+    finally { await file?.close(); }
+  }
+  return { turns, refresh, get current() { return current; } };
+}
+
+async function restoreAgyTools(messages, nativeId) {
+  const needsDetail = m => m.role === 'tool' && (/-tool-\d+$/.test(m.id)
+    || (/-agy-step-\d+$/.test(m.id) && (!m.text.includes('\n') || m.text.startsWith('Shell · '))));
+  if (!messages.some(needsDetail)) return messages;
+  const prompts = new Set(messages.filter(m => m.role === 'user').map(m => m.text.trim()));
+  if (!prompts.size) return messages;
+  const native = agyTranscript(nativeId, prompts);
+  await native.refresh();
+  const turns = [[]];
+  for (const message of messages) {
+    if (message.role === 'user') turns.push([]);
+    turns.at(-1).push(message);
+  }
+  return turns.flatMap(turn => {
+    if (turn[0]?.role !== 'user') return turn;
+    const matches = native.turns.filter(t => t.prompt === turn[0].text.trim());
+    if (matches.length !== 1) return turn;
+    const tools = turn.filter(m => m.role === 'tool');
+    const calls = [...matches[0].calls.values()];
+    // Only rebuild an entire legacy batch when the old cap was reached and
+    // both sources place all actions before the first visible reply.
+    if (tools.length === 100 && tools.every((m, i) => m.id.endsWith('-tool-' + (i + 1)) && m.reply_offset === 0)
+        && calls.length > 100 && !matches[0].toolsAfterReply
+        && turn.slice(1).every(m => ['tool', 'agent', 'notice'].includes(m.role))) {
+      const restored = calls.map((c, i) => ({ id: tools[0].id.replace(/-tool-1$/, '-native-tool-' + i),
+        role: 'tool', text: agyToolText(c.preview, c.summary), reply_offset: 0 }));
+      return [turn[0], ...restored, ...turn.slice(1).filter(m => m.role !== 'tool')];
+    }
+    return turn.map(m => {
+      if (!needsDetail(m)) return m;
+      const step = /-agy-step-(\d+)$/.exec(m.id);
+      const call = agyCallForTool(matches[0], step ? Number(step[1]) : undefined, m.text);
+      return call?.summary ? { ...m, text: agyToolText(m.text, call.summary) } : m;
+    });
+  });
 }

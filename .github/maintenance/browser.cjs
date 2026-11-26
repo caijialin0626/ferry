@@ -26,13 +26,30 @@ else {
   process.stdin.on('data', chunk => input += chunk);
   process.stdin.on('end', () => {
     const text = JSON.parse(input).message.content;
-    console.log(JSON.stringify({event:'init',conversation_id:'demo',init:{permission_mode:'always-proceed'}}));
+    const sid = '00000000-0000-4000-8000-000000000001';
+    console.log(JSON.stringify({event:'init',conversation_id:sid,init:{permission_mode:'always-proceed'}}));
     const output = text_delta => console.log(JSON.stringify({event:'step_update',step_update:{step_type:'agent_response',text_delta}}));
-    output('Browser reply: ');
-    setTimeout(() => {
-      output(text + '\\n\\n- Inspect [sample.go](file:///demo/sample.go#L12-L19) and [guide](https://example.org/guide).');
-      console.log(JSON.stringify({event:'result',result:{conversation_id:'demo',status:'SUCCESS'}}));
-    }, 150);
+    const calls = [];
+    for (let i = 1; i <= 105; i++) {
+      const cmd = 'example ' + i;
+      calls.push({name:'run_command',args:{CommandLine:JSON.stringify(cmd),toolSummary:JSON.stringify('Inspect sample ' + i)}});
+      console.log(JSON.stringify({event:'step_update',step_update:{step_type:'tool',step_index:i+1,state:'DONE',
+        tool_name:'run_command',tool_info:{parameters:{CommandLine:cmd}}}}));
+    }
+    const fs = require('node:fs');
+    const folder = require('node:path').join(process.env.FIXTURE_BRAIN, sid, '.system_generated', 'logs');
+    fs.mkdirSync(folder, {recursive:true});
+    fs.writeFileSync(folder+'/transcript.jsonl', [ {type:'USER_INPUT',content:text,step_index:0},
+      {type:'PLANNER_RESPONSE',step_index:1,tool_calls:calls} ].map(JSON.stringify).join('\\n')+'\\n');
+    const wait = setInterval(() => {
+      if (!fs.existsSync(process.env.FIXTURE_BRAIN+'/finish')) return;
+      clearInterval(wait);
+      output('Browser reply: ');
+      setTimeout(() => {
+        output(text + '\\n\\n- Inspect [sample.go](file:///demo/sample.go#L12-L19) and [guide](https://example.org/guide).');
+        console.log(JSON.stringify({event:'result',result:{conversation_id:sid,status:'SUCCESS'}}));
+      }, 150);
+    }, 50);
   });
 }`, { mode: 0o700 });
     function start(name, settings) {
@@ -41,7 +58,7 @@ else {
       });
       children.push(child);
     }
-    start('host', { FERRY_HOST_DATA: join(tmp, 'host'), FERRY_HOST_PORT: hostPort, FERRY_AGY_BIN: cli,
+    start('host', { FERRY_HOST_DATA: join(tmp, 'host'), FERRY_HOST_PORT: hostPort, FERRY_AGY_BIN: cli, FERRY_AGY_HISTORY_DIR: join(tmp, 'brain'), FIXTURE_BRAIN: join(tmp, 'brain'),
       FERRY_CODEX_BIN: join(process.cwd(), '.github/maintenance/codex-question-fixture.cjs'),
       FERRY_CODEX_APP_SERVER_SOCKET: join(tmp, 'absent.sock'), FERRY_CLAUDE_BIN: join(tmp, 'absent') });
     start('web', { FERRY_WEB_DATA: join(tmp, 'web'), FERRY_WEB_LOGIN_TOKEN: code,
@@ -79,6 +96,14 @@ else {
     await page.locator('#agent').selectOption('agy', { force: true });
     await page.locator('#prompt').fill('hello from the browser');
     await page.locator('#send').click();
+    const count = page.locator('.group-label').filter({ hasText: '105' });
+    const summary = page.locator('.group-last').filter({ hasText: 'Inspect sample 105' });
+    await count.waitFor();
+    await summary.waitFor();
+    await page.reload();
+    await count.waitFor();
+    await summary.waitFor();
+    await fs.writeFile(join(tmp, 'brain', 'finish'), '');
     const reply = page.locator('#messages').getByText('Browser reply: hello from the browser', { exact: true });
     await reply.waitFor();
     async function checkFileReference() {
