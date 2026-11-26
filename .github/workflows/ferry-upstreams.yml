@@ -1,26 +1,26 @@
-name: Check upstream CLIs
-on:
-  schedule:
-    - cron: '37 3 * * *'
-  workflow_dispatch:
-
+name: Request inline progress rollback review
+on: workflow_dispatch
 permissions: {}
 jobs:
-  check:
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+  review:
+    if: github.ref == 'refs/heads/ferry/request-review-inline-rollback' && github.actor == 'caijialin0626'
     runs-on: ubuntu-latest
     timeout-minutes: 3
-    strategy:
-      fail-fast: false
-      matrix:
-        cli: [codex, claude, agy]
     permissions:
-      actions: write
+      contents: read
+      pull-requests: write
     steps:
-      - name: Queue a compatibility check
+      - name: Open the tested change for review
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          BRANCH: ${{ github.event.repository.default_branch }}
-          CLI: ${{ matrix.cli }}
-        run: gh workflow run ferry-issues.yml -R "$REPO" --ref "$BRANCH" -f mode=upstream -f cli="$CLI"
+        run: |
+          set -eu
+          head=ferry/restore-inline-progress
+          test "$(gh api "repos/$REPO/git/ref/heads/$head" --jq .object.sha)" = 4cd48aa2bb743d0d61d3bf4bc7d1d305d3b79a6b
+          cat > "$RUNNER_TEMP/review.md" <<'BODY'
+          Restore the live action preview to the right of the running count. This reverts #14 and retains the native summaries, expandable details and counts above 100 from #13.
+
+          A Chromium mobile-viewport regression verified the inline summary at 105 actions before and after reload.
+          BODY
+          gh pr create -R "$REPO" --base main --head "$head" --title 'Restore inline Antigravity progress' --body-file "$RUNNER_TEMP/review.md"
