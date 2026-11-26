@@ -182,8 +182,10 @@ else {
       }
       if (await page.locator('.markdown li').count()) throw new Error('Questions were also rendered as a list');
     }
-    await page.route('**/api/quota?*', route => route.fulfill({ json: { accounts: [] } }));
+    const windows = Array.from({ length: 12 }, (_, i) => ({ label: 'Window ' + i, usedPercent: 25 }));
+    await page.route('**/api/quota?*', route => route.fulfill({ json: { accounts: [{ name: 'Sample account', windows }] } }));
     await page.locator('#quota-footer').click();
+    await page.locator('#quota-results .quota-window').first().waitFor();
     for (const width of [390, 1280]) {
       await page.setViewportSize({ width, height: 844 });
       await page.waitForFunction(() => {
@@ -191,6 +193,14 @@ else {
         const refresh = document.getElementById('quota-refresh').getBoundingClientRect();
         return select.width > 0 && refresh.width > 0 && Math.abs(select.top - refresh.top) < 1 &&
           Math.abs(select.bottom - refresh.bottom) < 1;
+      }, undefined, { timeout: 3000 });
+      await page.waitForFunction(() => {
+        const dialog = document.getElementById('quota-dialog');
+        const list = document.getElementById('quota-results');
+        list.scrollTop = list.scrollHeight;
+        const last = list.lastElementChild.getBoundingClientRect();
+        return dialog.scrollHeight === dialog.clientHeight && list.scrollTop > 0 &&
+          last.bottom <= list.getBoundingClientRect().bottom + 1;
       }, undefined, { timeout: 3000 });
     }
     console.log('Browser login, chat, native reply and persisted history passed.');
