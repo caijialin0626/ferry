@@ -1115,6 +1115,8 @@ dialog::backdrop { background: rgb(18 28 22 / .3); }
 
 /* quotas */
 #quota-dialog { width: min(500px, calc(100% - 32px)); }
+#quota-dialog[open] { display: flex; flex-direction: column; }
+#quota-dialog > .dialog-content { min-height: 0; max-height: none; }
 .quota-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; padding-bottom: 2px; }
 .quota-machine-field { display: grid; gap: 4px; min-width: 0; margin: 0; color: var(--muted); font-size: 12px; }
 .quota-machine-field :is(select, .select-trigger) { width: 100%; min-width: 0; min-height: 34px; }
