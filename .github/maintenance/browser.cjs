@@ -59,6 +59,7 @@ else {
       children.push(child);
     }
     start('host', { FERRY_HOST_DATA: join(tmp, 'host'), FERRY_HOST_PORT: hostPort, FERRY_AGY_BIN: cli, FERRY_AGY_HISTORY_DIR: join(tmp, 'brain'), FIXTURE_BRAIN: join(tmp, 'brain'),
+      FIXTURE_COMPACTION_FINISH: join(tmp, 'finish-compaction'),
       FERRY_CODEX_BIN: join(process.cwd(), '.github/maintenance/codex-question-fixture.cjs'),
       FERRY_CODEX_APP_SERVER_SOCKET: join(tmp, 'absent.sock'), FERRY_CLAUDE_BIN: join(tmp, 'absent') });
     start('web', { FERRY_WEB_DATA: join(tmp, 'web'), FERRY_WEB_LOGIN_TOKEN: code,
@@ -69,7 +70,7 @@ else {
     }
     browser = process.env.SMOKE_WEBKIT === '1' ? await webkit.launch() : await chromium.launch({ executablePath: process.env.CHROME_BIN || '/usr/bin/chromium',
       args: ['--no-sandbox', '--disable-dev-shm-usage'] });
-    const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: process.env.SMOKE_WEBKIT === '1', colorScheme: 'dark' });
+    const page = await browser.newPage({ locale: 'zh-CN', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: process.env.SMOKE_WEBKIT === '1', colorScheme: 'dark' });
     // Verify the first paint and live system changes without reloading or a saved theme preference.
     async function appearance(scheme) {
       await page.waitForFunction(expected => {
@@ -133,6 +134,21 @@ else {
     await page.getByText('Second.', { exact: true }).waitFor();
     if (await page.locator('.reply-meta time').count()) throw new Error('Legacy reply time precedes guidance');
     await appearance('dark');
+    const compactChat = await page.request.post(url + '/api/sessions', { headers: { origin: url }, data: { project: null, agent: 'codex' } });
+    await page.goto(url + '/?session=' + (await compactChat.json()).id);
+    await page.locator('#prompt').fill('compact');
+    await page.locator('#send').click();
+    const compacting = page.locator('.reply-wait').getByText('正在压缩上下文…', { exact: true });
+    await compacting.waitFor();
+    await page.reload();
+    await compacting.waitFor();
+    await fs.writeFile(join(tmp, 'finish-compaction'), '');
+    const compacted = page.getByText('上下文已压缩', { exact: true });
+    await compacted.waitFor();
+    await page.getByText('Continued after compaction.', { exact: true }).waitFor();
+    await page.reload();
+    await compacted.waitFor(); // Strict locator also rejects duplicate markers.
+    if (await compacting.isVisible()) throw new Error('Finished chat still shows active compaction');
     for (const [prompt, method] of [['ask-live', 'turn/steer'], ['ask-idle', 'turn/start']]) {
       const created = await page.request.post(url + '/api/sessions', { headers: { origin: url }, data: { project: null, agent: 'codex' } });
       if (!created.ok()) throw new Error('Could not create Codex test chat: ' + await created.text());

@@ -179,6 +179,10 @@ async function runClaude({ file, cwd, nativeId, forkSource, branchKind, prompt, 
         if (!process.child.stdin.writableEnded) setSteer(({ text, images }) => send(text, images, 'next'));
         reportBackground();
       }
+      if (msg.type === 'system' && !msg.parent_tool_use_id) {
+        if (msg.subtype === 'status') emit('compacting', msg.status === 'compacting');
+        if (msg.subtype === 'compact_boundary') emit('compacted', msg.uuid);
+      }
       if (msg.type === 'system' && msg.subtype === 'background_tasks_changed' && Array.isArray(msg.tasks)) {
         background = msg.tasks.length > 0;
         // A task notification can start another native turn as the last task leaves the list.
@@ -400,6 +404,7 @@ async function runCodexConnection({ file, cwd, nativeId, prompt, model, effort, 
   let turnFinished;
   const streamedItems = new Set();
   const asyncItems = new Set();
+  let hasCompactionItems = false;
   const completedMessages = new Set();
   const questions = new Map();
   let previousItem;
@@ -444,6 +449,13 @@ async function runCodexConnection({ file, cwd, nativeId, prompt, model, effort, 
       return;
     }
     if (eventTurn && eventTurn !== turnId) return;
+    if (params?.item?.type === 'contextCompaction') {
+      hasCompactionItems = true;
+      if (msg.method === 'item/started') emit('compacting', true);
+      if (msg.method === 'item/completed') emit('compacted', params.item.id);
+    }
+    // Older servers only send this notification. Newer ones may send both forms.
+    if (msg.method === 'thread/compacted' && !hasCompactionItems) emit('compacted');
     if (msg.method === 'serverRequest/resolved') {
       questions.get(params?.requestId)?.();
       questions.delete(params?.requestId);
