@@ -680,6 +680,7 @@ body > .connection-status { position: fixed; z-index: 50; top: max(10px, env(saf
 .group-label { flex: none; font-weight: 540; }
 .activity-group.running .group-label { color: var(--ink); }
 .group-last { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); font: 12px var(--mono); }
+.compaction-note { display: block; color: var(--muted); font-size: 12px; }
 .activity-group.running .group-last { color: var(--muted); }
 @media (prefers-reduced-motion: no-preference) {
   .activity-group.running .group-text, .reply-wait > span {

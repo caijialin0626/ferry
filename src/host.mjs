@@ -79,7 +79,7 @@ let recovered;
 function turnStatus(run) {
   const waitingForAnswer = run?.questions && Array.from(run.questions.values()).some(question => question.blocking);
   const waiting = run?.waiting || (waitingForAnswer ? 'Waiting for your answer' : '');
-  return { text: waiting || run?.background || (run?.questions?.size ? 'A question is waiting for an answer' : ''),
+  return { text: waiting || (run?.compacting ? 'Compacting context…' : '') || run?.background || (run?.questions?.size ? 'A question is waiting for an answer' : ''),
     turn: run?.steer && !waiting && !run.controller.signal.aborted ? run.command : null };
 }
 
@@ -156,6 +156,7 @@ async function execute(session, run, input, cwd, options, images) {
   let timer;
   let lastTool = '';
   let toolCount = 0;
+  const compactions = new Set();
   let outputLength = 0;
   let imageCount = 0;
   let outputWrites = 0;
@@ -289,6 +290,20 @@ async function execute(session, run, input, cwd, options, images) {
       },
       saveNative: id => queue(() => db.query('UPDATE sessions SET native_id=$1 WHERE id=$2', [id, session.id])),
       emit(type, value, stepIndex) {
+        if (type === 'compacting' || type === 'compacted') {
+          const active = type === 'compacting' && value === true;
+          if (active !== Boolean(run.compacting)) {
+            run.compacting = active;
+            publishTurnStatus();
+          }
+          if (type === 'compacting') return;
+          const id = value || randomUUID();
+          if (compactions.has(id)) return;
+          compactions.add(id);
+          flush(true);
+          message(command + '-compaction-' + compactions.size, 'compaction', 'Context compacted', outputLength);
+          return;
+        }
         if (type === 'waiting' || type === 'background') {
           if ((run[type] || '') === value) return;
           run[type] = value;

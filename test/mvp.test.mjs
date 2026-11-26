@@ -248,6 +248,10 @@ createInterface({input:process.stdin}).on('line',raw=>{
     reply('先看🔎。');
     const bash={type:'tool_use',id:'fixture-bash',name:'Bash',input:{command:'printf %s '+ 'x'.repeat(700)}};
     line({type:'assistant',message:{id:'fixture-first',content:[{type:'text',text:'先看🔎。'},bash,bash,{type:'tool_use',name:'Read',input:{file_path:'src/fixture.js'}}]}});
+    line({type:'system',subtype:'status',status:'compacting'});
+    line({type:'system',subtype:'compact_boundary',uuid:'child-boundary',parent_tool_use_id:'child-tool'});
+    for(let i=0;i<2;i++) line({type:'system',subtype:'compact_boundary',uuid:'main-boundary'});
+    line({type:'system',subtype:'status',status:null});
     line({type:'stream_event',event:{type:'message_start',message:{id:'fixture-second'}}});
     reply('再说明结果。');
     line({type:'assistant',message:{id:'fixture-second',content:[{type:'text',text:'再说明结果。'}]}});
@@ -526,12 +530,13 @@ require('node:readline').createInterface({input:process.stdin}).on('line',raw=>{
   assert.equal(sideReply.messages.at(-1).text, 'fork:side');
   assert.equal((await call(url)).messages.some(m => m.text === 'branch-check'), false);
   await call(url + '/send', { id: randomUUID(), text: 'timeline' }, 202);
-  const timeline = (await finished()).messages.slice(-4);
-  assert.deepEqual(timeline.map(message => message.role), ['user', 'agent', 'tool', 'tool']);
+  const timeline = (await finished()).messages.slice(-5);
+  assert.deepEqual(timeline.map(message => message.role), ['user', 'agent', 'tool', 'tool', 'compaction']);
   assert.equal(timeline[1].text, '先看🔎。\n\n再说明结果。\n\n最后列出 `结果`。');
   assert.equal(timeline[2].text, 'Bash · printf %s ' + 'x'.repeat(700));
   assert.equal(timeline[3].text, 'Read · src/fixture.js');
-  assert.deepEqual(timeline.slice(2).map(message => message.reply_offset), ['先看🔎。'.length, '先看🔎。'.length]);
+  assert.equal(timeline[4].text, 'Context compacted');
+  assert.ok(timeline.slice(2).every(message => message.reply_offset === '先看🔎。'.length));
   const turn = randomUUID();
   const guided = { id: randomUUID(), text: '换个方向', steer: turn };
   await call(url + '/send', { id: turn, text: 'steer-test' }, 202);

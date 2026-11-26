@@ -23,6 +23,20 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (method !== 'turn/start' && method !== 'turn/steer') return;
   ok(method === 'turn/start' ? { turn: { id: turnId } } : { turnId });
   const prompt = params.input[0].text;
+  if (prompt === 'compact') {
+    const item = { type: 'contextCompaction', id: 'compact-item' };
+    notify('item/completed', { item, turnId: 'unrelated' });
+    notify('item/started', { item });
+    const timer = setInterval(() => {
+      if (!require('node:fs').existsSync(process.env.FIXTURE_COMPACTION_FINISH)) return;
+      clearInterval(timer);
+      notify('item/completed', { item });
+      notify('thread/compacted', {});
+      notify('item/completed', { item: { type: 'agentMessage', id: 'after', text: 'Continued after compaction.' } });
+      finish();
+    }, 50);
+    return;
+  }
   if (prompt === 'ask-live' || prompt === 'ask-idle') {
     const item = { id: 'q', type: 'agentMessage', delivery: 'async', questions, text: 'Choose a color?\n- Red\n- Blue' };
     notify('item/started', { item });

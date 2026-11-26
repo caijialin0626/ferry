@@ -1855,8 +1855,9 @@ function turnTranscript(flow) {
   for (const mark of marks) {
     const previous = groups.at(-1);
     const offset = Math.max(previous?.offset ?? 0, activityOffset(text, mark.offset, blocks,
-      session?.agent === 'claude' || mark.entry.role === 'question'));
-    if (mark.entry.role === 'steer') groups.push({ offset, steer: mark.entry });
+      session?.agent === 'claude' || ['question', 'compaction'].includes(mark.entry.role)));
+    if (mark.entry.role === 'compaction') groups.push({ offset, compaction: mark.entry });
+    else if (mark.entry.role === 'steer') groups.push({ offset, steer: mark.entry });
     else if (mark.entry.role === 'question') groups.push({ offset, question: mark.entry });
     else if (previous?.tools && !text.slice(previous.offset, offset).trim()) previous.tools.push(mark.entry);
     else groups.push({ offset, tools: [mark.entry] });
@@ -1954,8 +1955,9 @@ function place(entry, list = turns, container = $('messages')) {
       question.answer = answer;
       pending.add(question.turn);
     }
-  } else if (['agent', 'tool', 'steer', 'question'].includes(entry.role)) {
+  } else if (['agent', 'tool', 'steer', 'question', 'compaction'].includes(entry.role)) {
     if (entry.role === 'steer') entry.node = userNode(entry);
+    if (entry.role === 'compaction') entry.node = el('small', 'compaction-note', translateServer(entry.text));
     turn.flow.push(entry);
   }
   else if (entry.role !== 'user') { turn.extras.push(entry); turn.extra.append(extraNode(entry)); }
@@ -2056,11 +2058,11 @@ function drawTurn(turn) {
     visibleFragments.set(key, fragment);
     return fragment.node;
   }
-  for (const { offset, tools, steer, question } of groups) {
-    const key = (steer ?? question ?? tools[0]).id;
+  for (const { offset, tools, steer, question, compaction } of groups) {
+    const key = (steer ?? question ?? compaction ?? tools[0]).id;
     const fragment = displayText(key, offset);
     if (fragment) lastReply = nodes.push(fragment) - 1;
-    if (steer) { nodes.push(steer.node); continue; }
+    if (steer || compaction) { nodes.push((steer ?? compaction).node); continue; }
     if (question) {
       // An async answer is shown at its send position, with the user's timestamp.
       if (question.id.startsWith('async-question-') && rendered.has(question.id + '-user')) continue;
@@ -2069,7 +2071,7 @@ function drawTurn(turn) {
       continue;
     }
     const group = turn.groups.get(key) ?? newActivity(key);
-    const running = turn === turns.at(-1) && session?.state === 'running' && offset === text.length;
+    const running = turn === turns.at(-1) && session?.state === 'running' && offset === text.length && groups.at(-1).tools === tools;
     drawActivity(group, tools, running);
     visibleGroups.set(key, group);
     nodes.push(group.node);

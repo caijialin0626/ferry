@@ -185,6 +185,8 @@ const zh = {
   "Send guidance (Enter)": "发送引导（Enter）",
   "Add guidance to the current turn…": "补充要求，引导当前轮次…",
   "Thinking…": "正在思考…",
+  "Compacting context…": "正在压缩上下文…",
+  "Context compacted": "上下文已压缩",
   "Working…": "执行中…",
   "Stopping…": "正在停止…",
   "Turn failed": "本轮失败",
