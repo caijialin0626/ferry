@@ -60,4 +60,4 @@ npx --yes github:caijialin0626/ferry#main web --port 8787
 
 ## Issue 自动处理
 
-提交 issue 时请写清预期行为，报告 bug 时也请附上复现步骤。GitHub Actions 会让 Codex 筛选新 issue，为适合自动处理的问题编写修复并创建 PR。独立审查和端到端测试均通过后，工作流会自动合入。开发进度、PR 链接和合入结果都能在原 issue 里看到。[查看工作流说明](.github/maintenance/README.md)
+提交 issue 时请写清预期行为，报告 bug 时也请附上复现步骤。GitHub Actions 会让 Codex 筛选新 issue，为适合自动处理的问题编写修复并创建 PR。自动审查和端到端测试的结果会发到 PR 和原 issue。由维护者审批并手动合入。[查看工作流说明](.github/maintenance/README.md)

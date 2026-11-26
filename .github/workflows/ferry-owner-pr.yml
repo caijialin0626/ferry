@@ -1,0 +1,68 @@
+name: Merge tested owner PRs
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions: {}
+concurrency:
+  group: ferry-owner-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  PR: ${{ github.event.pull_request.number }}
+  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+jobs:
+  test:
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.base.ref == github.event.repository.default_branch &&
+      github.event.pull_request.head.repo.id == github.event.repository.id &&
+      github.event.pull_request.user.id == github.event.repository.owner.id &&
+      github.event.sender.id == github.event.repository.owner.id &&
+      github.triggering_actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Test the proposed merge in isolation
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=2 origin "refs/pull/$PR/merge"
+          candidate=$(git rev-parse FETCH_HEAD)
+          test "$(git rev-parse "$candidate^2")" = "$HEAD_SHA"
+          # Read the test driver from the main-branch parent of GitHub's merge ref.
+          git checkout --detach "$candidate^1"
+          python3 -B .github/maintenance/test_policy.py
+          python3 -B .github/maintenance/test_upstream.py
+          CANDIDATE="$candidate" bash .github/maintenance/gate.sh
+
+  merge:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Approve and merge the tested revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER_ID: ${{ github.event.repository.owner.id }}
+          REPO_ID: ${{ github.event.repository.id }}
+        run: |
+          set -euo pipefail
+          api="repos/$GITHUB_REPOSITORY/pulls/$PR"
+          gh api "$api" | jq -e --arg sha "$HEAD_SHA" --argjson owner "$OWNER_ID" --argjson repo "$REPO_ID" '
+            .state == "open" and .draft == false and .base.ref == "main" and
+            .head.repo.id == $repo and .user.id == $owner and .head.sha == $sha
+          ' >/dev/null
+          gh api "$api/reviews" -f event=APPROVE -f commit_id="$HEAD_SHA" \
+            -f body="Owner PR checks passed: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --silent
+          gh api --method PUT "$api/merge" -f sha="$HEAD_SHA" -f merge_method=merge | jq -e '.merged == true'
