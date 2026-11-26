@@ -664,6 +664,7 @@ body > .connection-status { position: fixed; z-index: 50; top: max(10px, env(saf
 .copy-message .icon { width: 15px; height: 15px; }
 
 /* tool activity: one disclosure per turn, stable children */
+.activity-progress { margin: 0; color: var(--text); font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
 .activity-group { align-self: stretch; min-width: 0; color: var(--muted); font-size: 13px; }
 .activity-group > summary {
   display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; min-height: 30px;
