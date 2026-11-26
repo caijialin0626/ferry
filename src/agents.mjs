@@ -11,7 +11,7 @@ import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import WebSocket from 'ws';
 import { decodeReplyImage, readReplyImage } from './attachments.mjs';
-import { claudeToolText } from './history.mjs';
+import { agyCallForTool, agyToolText, agyTranscript, claudeToolText } from './history.mjs';
 import { userQuestions } from './questions.mjs';
 
 const exec = promisify(execFile);
@@ -261,6 +261,25 @@ async function runAgy({ file, cwd, nativeId, prompt, model, effort, signal, emit
   let id = nativeId;
   let streamed = false;
   let result;
+  const pending = new Map();
+  let transcript;
+  let reading;
+  function updateSummaries() {
+    if (reading || !pending.size || !id) return reading;
+    transcript ??= agyTranscript(id, new Set([prompt.trim()]));
+    reading = transcript.refresh().then(() => {
+      const turn = transcript.current;
+      if (!turn) return;
+      for (const [index, tool] of pending) {
+        const call = agyCallForTool(turn, index, tool.detail);
+        if (!call || call.name !== tool.name) continue;
+        if (call.summary) emit('toolDetail', agyToolText(tool.detail, call.summary), index);
+        pending.delete(index);
+      }
+    }).finally(() => { reading = undefined; });
+    return reading;
+  }
+  const poll = setInterval(updateSummaries, 750);
   function native(value) {
     if (!value) return;
     if (id && value !== id) throw new Error('Antigravity returned a different session ID.');
@@ -280,15 +299,20 @@ async function runAgy({ file, cwd, nativeId, prompt, model, effort, signal, emit
           streamed = true;
           emit('delta', step.text_delta);
         }
-        if (step?.step_type === 'tool' && !seenTools.has(step.step_index)) {
+        if (step?.step_type === 'tool') {
+          const index = step.step_index;
           const name = step.tool_name || step.tool_info?.name;
-          const command = step.tool_info?.parameters?.CommandLine;
-          if (typeof command === 'string' && command.trim()) {
-            seenTools.add(step.step_index);
-            emit('tool', 'Shell · ' + command.trim());
-          } else if (name && step.state === 'DONE') {
-            seenTools.add(step.step_index);
-            emit('tool', name);
+          const params = step.tool_info?.parameters;
+          const command = typeof params?.CommandLine === 'string' && params.CommandLine.trim();
+          if (!seenTools.has(index) && (command || (name && step.state === 'DONE'))) {
+            const detail = command ? 'Shell · ' + command : name;
+            const text = agyToolText(detail, params?.toolSummary);
+            seenTools.add(index);
+            emit('tool', text, index);
+            if (text === detail && Number.isSafeInteger(index)) pending.set(index, { name, detail });
+          } else if (pending.has(index) && params?.toolSummary) {
+            emit('toolDetail', agyToolText(pending.get(index).detail, params.toolSummary), index);
+            pending.delete(index);
           }
         }
       }
@@ -304,6 +328,9 @@ async function runAgy({ file, cwd, nativeId, prompt, model, effort, signal, emit
       throw new Error(result?.error || exit.stderr.trim() || 'Antigravity did not finish this turn.');
     }
   } finally {
+    clearInterval(poll);
+    await reading;
+    await updateSummaries();
     process.stop();
     await process.closed;
   }

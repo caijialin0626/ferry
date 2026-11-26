@@ -288,7 +288,7 @@ async function execute(session, run, input, cwd, options, images) {
         if (changed) publishTurnStatus();
       },
       saveNative: id => queue(() => db.query('UPDATE sessions SET native_id=$1 WHERE id=$2', [id, session.id])),
-      emit(type, value) {
+      emit(type, value, stepIndex) {
         if (type === 'waiting' || type === 'background') {
           if ((run[type] || '') === value) return;
           run[type] = value;
@@ -311,13 +311,24 @@ async function execute(session, run, input, cwd, options, images) {
           return;
         }
         if (typeof value !== 'string' || !value) return;
-        if (type === 'delta') appendOutput(value);
-        else if (type === 'tool' && toolCount < 100 && (session.agent !== 'codex' || value !== lastTool)) {
+        if (type === 'toolDetail' && Number.isSafeInteger(stepIndex)) {
+          const id = command + '-agy-step-' + stepIndex;
+          const text = value.slice(0, 8192);
+          queue(async () => {
+            await withTransaction(db, async client => {
+              await client.query("UPDATE messages SET text=$3 WHERE session=$1 AND id=$2 AND role='tool'", [session.id, id, text]);
+              await record(client, session.id, 'toolDetail', { id, text });
+            });
+            publish(session.id);
+          });
+        } else if (type === 'delta') appendOutput(value);
+        else if (type === 'tool' && (session.agent !== 'codex' || value !== lastTool)) {
           lastTool = value;
           flush(true);
           const limit = session.agent === 'codex' ? 500 : 8192;
           const description = value.length > limit ? value.slice(0, limit) + '…' : value;
-          message(command + '-tool-' + ++toolCount, 'tool', description, outputLength);
+          const id = session.agent === 'agy' && Number.isSafeInteger(stepIndex) ? command + '-agy-step-' + stepIndex : command + '-tool-' + ++toolCount;
+          message(id, 'tool', description, outputLength);
         }
       },
     });
