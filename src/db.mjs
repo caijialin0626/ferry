@@ -27,6 +27,9 @@ export function openDatabase(path) {
       model TEXT NOT NULL DEFAULT '', effort TEXT NOT NULL DEFAULT '', codex_imported INTEGER NOT NULL DEFAULT 0,
       custom_title INTEGER NOT NULL DEFAULT 0, branch_parent TEXT, branch_kind TEXT
     );
+    CREATE TABLE IF NOT EXISTS side_contexts (
+      session TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, context TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS commands (
       session TEXT NOT NULL REFERENCES sessions(id), id TEXT NOT NULL, text TEXT NOT NULL,
       request_key TEXT, PRIMARY KEY(session,id)

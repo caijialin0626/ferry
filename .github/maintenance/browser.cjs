@@ -155,6 +155,27 @@ else process.exit(2);`, { mode: 0o700 });
       }
       if (await page.locator('.markdown li').count()) throw new Error('Questions were also rendered as a list');
     }
+    await page.locator('#new-chat').click();
+    await page.locator('#agent').selectOption('agy', { force: true });
+    await page.locator('#prompt').fill('ask-fixture');
+    await page.locator('#send').click();
+    const form = page.locator('.interactive-question');
+    await form.getByRole('radio', { name: 'Blue' }).waitFor();
+    await page.reload();
+    await form.getByRole('radio', { name: 'Blue' }).check();
+    await form.getByRole('checkbox', { name: 'Apple' }).check();
+    await form.getByRole('checkbox', { name: 'Pear' }).check();
+    await form.locator('.question-freeform').fill('Fig');
+    await form.locator('[type=submit]').click();
+    await page.locator('.markdown').getByText('Form received.').waitFor();
+    await page.locator('#branches-open').click();
+    if (await page.locator('#branch-fork').isVisible()) throw new Error('agy advertised a full fork');
+    await page.locator('#branch-side').click();
+    const side = page.frameLocator('#side-frame');
+    await side.locator('#prompt').fill('A side question');
+    await side.locator('#send').click();
+    await side.locator('.markdown').getByText('Side started.').waitFor();
+    await page.locator('#side-close').click();
     const windows = Array.from({ length: 12 }, (_, i) => ({ label: 'Window ' + i, usedPercent: 25 }));
     await page.route('**/api/quota?*', route => route.fulfill({ json: { accounts: [{ name: 'Sample account', windows }] } }));
     await page.locator('#quota-footer').click();

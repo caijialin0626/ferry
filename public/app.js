@@ -455,6 +455,7 @@ const projectsAcrossMachines = () => [...inventories.values()].flatMap(snapshot 
 const sessionsAcrossMachines = () => [...inventories.values()].flatMap(snapshot => snapshot.sessions);
 const isRunning = item => ['running', 'stopping'].includes(item?.state);
 const canRename = item => inventories.get(item?.machine)?.machine?.sessionRenaming === true;
+const branchLabel = item => t(item?.agent === 'agy' ? 'Side chat' : 'Fork and side chat');
 const canBranch = item => !sideFrame && item?.canBranch && !item.archived && !projectOf(item.project, item.machine)?.archived;
 const resultLabel = { idle: t('Completed'), failed: t('Failed'), interrupted: t('Interrupted') };
 const hasRun = item => item?.native_id || item?.title;
@@ -626,7 +627,7 @@ function sessionRow(item, sub, scope) {
   if (menuFor === key) {
     const items = [];
     if (canRename(item)) items.push(['edit', t('Rename'), () => openRename(item)]);
-    if (canBranch(item)) items.push(['branch', t('Fork and side chat'), () => openBranches(item)]);
+    if (canBranch(item)) items.push(['branch', branchLabel(item), () => openBranches(item)]);
     if (project?.archived) items.push(['restore', t('Restore project'), () => setProjectPref(project, { archived: false })]);
     else {
       if (!item.archived) items.push(['pin', item.pinned ? t('Unpin') : t('Pin'), () => setSessionPref(item, { pinned: !item.pinned })]);
@@ -1023,6 +1024,8 @@ function openBranches(item) {
   if (!canBranch(item) || branchBusy) return;
   branchTarget = { ...item };
   $('branch-error').hidden = true;
+  $('branches-title').textContent = branchLabel(item);
+  $('branch-fork').hidden = item.agent === 'agy';
   $('branch-fork').querySelector('small').textContent = item.agent === 'claude'
     ? t('Copy the history; Claude Code forks it on the first send')
     : t('Copy the history and explore another direction');
@@ -1495,6 +1498,8 @@ function drawChrome() {
   const archive = $('archive-session');
   $('rename-open').hidden = !canRename(session);
   $('branches-open').hidden = !canBranch(session);
+  $('branches-open').title = branchLabel(session);
+  $('branches-open').setAttribute('aria-label', branchLabel(session));
   $('origin-session').hidden = sideFrame || !session?.branch_parent;
   $('schedule-open').hidden = !session || blocked() || inventories.get(machineId)?.machine?.scheduling !== true;
   pin.hidden = archive.hidden = !session || Boolean(project?.archived);

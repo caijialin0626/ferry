@@ -6,13 +6,13 @@ import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
 import { accessSync, constants } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import WebSocket from 'ws';
 import { decodeReplyImage, readReplyImage } from './attachments.mjs';
 import { agyCallForTool, agyToolText, agyTranscript, claudeToolText } from './history.mjs';
-import { userQuestions } from './questions.mjs';
+import { agyForm, userQuestions } from './questions.mjs';
 
 const exec = promisify(execFile);
 const codexClient = { name: 'ferry', version: '0.1.0' };
@@ -251,12 +251,23 @@ async function runClaude({ file, cwd, nativeId, forkSource, branchKind, prompt, 
   }
 }
 
-async function runAgyAcp({ file, cwd, nativeId, prompt, model, effort, images = [], signal, emit, saveNative, setSteer = () => {} }) {
-  const process = nativeProcess(file, ['acp', '--dangerously-skip-permissions'], cwd, signal);
+async function runAgyAcp({ file, cwd, nativeId, prompt, model, effort, images = [], signal, emit, saveNative, setSteer = () => {}, ask, side }) {
+  const args = ['acp'];
+  if (side) {
+    const agents = join(side.directory, '.agents', 'agents');
+    await mkdir(agents, { recursive: true, mode: 0o700 });
+    await writeFile(join(agents, 'ferry-reader.md'), [
+      '---', 'name: ferry-reader', 'description: Read-only side chat',
+      'tools: [view_file, grep_search, list_dir]', 'commandExecutionPolicy: "off"', '---', '',
+    ].join('\n'), { mode: 0o600 });
+    args.push('--agent', 'ferry-reader', '--add-dir', cwd);
+  } else args.push('--dangerously-skip-permissions');
+  const process = nativeProcess(file, args, side?.directory || cwd, signal);
   const lines = process.lines[Symbol.asyncIterator]();
   let nextId = 0;
   let sessionId;
   const tools = new Map();
+  const forms = new Map();
 
   function write(message) {
     return new Promise((resolve, reject) => process.child.stdin.write(
@@ -270,7 +281,30 @@ async function runAgyAcp({ file, cwd, nativeId, prompt, model, effort, images = 
       if (line.done) throw new Error((await process.closed).stderr || 'Antigravity closed the session.');
       const message = parse(line.value);
       if (!message) continue;
+      if (message.method === '$/cancel_request') {
+        const id = message.params?.requestId ?? message.params?.id;
+        if (forms.has(id)) {
+          forms.get(id).close();
+          forms.delete(id);
+          await write({ id, result: { action: 'cancel' } });
+        }
+        continue;
+      }
       if (!message.method || message.id === undefined) return message;
+      if (message.method === 'elicitation/create') {
+        const params = message.params;
+        const form = ask && prompts.size && sessionId === params?.sessionId && (params.mode ?? 'form') === 'form' && agyForm(params.requestedSchema);
+        if (form) {
+          const close = ask(form.items, async answers => {
+            if (!forms.has(message.id)) throw new Error('This question has ended.');
+            signal.throwIfAborted();
+            await write({ id: message.id, result: { action: 'accept', content: form.content(answers) } });
+            forms.delete(message.id);
+          }, true);
+          forms.set(message.id, { close, toolId: params.toolCallId });
+        } else await write({ id: message.id, result: { action: 'cancel' } });
+        continue;
+      }
       if (message.method === 'session/request_permission') {
         await write({ id: message.id, result: { outcome: { outcome: 'cancelled' } } });
       } else await write({ id: message.id, error: { code: -32601, message: 'Unsupported client method' } });
@@ -290,11 +324,14 @@ async function runAgyAcp({ file, cwd, nativeId, prompt, model, effort, images = 
 
   const prompts = new Map();
   let imageInput;
-  function sendPrompt(id, text, attachments) {
+  function sendPrompt(id, text, attachments, context) {
     signal.throwIfAborted();
     if (attachments.length && !imageInput) throw new Error('This Antigravity CLI does not support image prompts.');
     const blocks = attachments.map(image => ({ type: 'image', mimeType: image.mediaType, data: image.content.toString('base64') }));
     if (text) blocks.unshift({ type: 'text', text });
+    if (context) blocks.unshift({ type: 'resource', resource: {
+      uri: 'ferry:///parent-conversation.json', mimeType: 'application/json', text: context,
+    } });
     return write({ id, method: 'session/prompt', params: { sessionId, prompt: blocks } });
   }
 
@@ -314,6 +351,13 @@ async function runAgyAcp({ file, cwd, nativeId, prompt, model, effort, images = 
   function updateTool(update) {
     const { toolCallId, title } = update;
     if (!toolCallId) return;
+    if (update.status === 'completed' || update.status === 'failed') {
+      for (const [id, form] of forms) {
+        if (form.toolId !== toolCallId) continue;
+        form.close();
+        forms.delete(id);
+      }
+    }
     const previous = tools.get(toolCallId);
     const args = update.rawInput || update.args || {};
     const detail = args.CommandLine ? 'Shell · ' + args.CommandLine : title || previous?.detail || update.name;
@@ -327,9 +371,10 @@ async function runAgyAcp({ file, cwd, nativeId, prompt, model, effort, images = 
   }
 
   try {
-    const { agentCapabilities } = await request('initialize', { protocolVersion: 1, clientCapabilities: {} });
+    const { agentCapabilities } = await request('initialize', { protocolVersion: 1, clientCapabilities: ask ? { elicitation: { form: {} } } : {} });
     imageInput = agentCapabilities?.promptCapabilities?.image;
-    const params = { cwd, mcpServers: [] };
+    const params = { cwd: side?.directory || cwd, mcpServers: [] };
+    if (side && !agentCapabilities?.promptCapabilities?.embeddedContext) throw new Error('Antigravity side chats require ACP embedded context.');
     if (nativeId) {
       sessionId = nativeId;
       const method = agentCapabilities.sessionCapabilities?.resume ? 'session/resume' : 'session/load';
@@ -338,13 +383,13 @@ async function runAgyAcp({ file, cwd, nativeId, prompt, model, effort, images = 
       const session = await request('session/new', params);
       sessionId = session?.sessionId;
       if (!sessionId) throw new Error('Antigravity did not return a conversation ID.');
-      saveNative(sessionId);
+      if (!side) saveNative(sessionId);
     }
     if (model) await request('session/set_model', { sessionId, modelId: model });
     else if (effort) await request('session/set_config_option', { sessionId, configId: 'thought_level', value: effort });
     const firstId = ++nextId;
     prompts.set(firstId, null);
-    await sendPrompt(firstId, prompt, images);
+    await sendPrompt(firstId, prompt, images, !nativeId && side?.context);
     setSteer(guide);
     while (prompts.size) {
       const message = await read();
@@ -365,6 +410,7 @@ async function runAgyAcp({ file, cwd, nativeId, prompt, model, effort, images = 
         receipt.reject(error);
         continue;
       }
+      if (side && !nativeId && message.id === firstId) saveNative(sessionId);
       receipt?.resolve();
       // agy hands off a running turn by completing the previous prompt RPC.
       // The replacement RPC remains open and owns subsequent output.
@@ -372,6 +418,7 @@ async function runAgyAcp({ file, cwd, nativeId, prompt, model, effort, images = 
     }
   } finally {
     setSteer(undefined);
+    for (const form of forms.values()) form.close();
     for (const receipt of prompts.values()) receipt?.reject(new Error('Antigravity closed the session.'));
     prompts.clear();
     process.stop();
@@ -380,7 +427,7 @@ async function runAgyAcp({ file, cwd, nativeId, prompt, model, effort, images = 
 }
 
 async function runAgy(options) {
-  if (!options.images?.length) {
+  if (!options.side && !options.images?.length) {
     const { stdout } = await exec(options.file, ['--version'], { signal: options.signal, timeout: 3500, env: cliEnv() });
     if (/^v?(?:0\.|1\.[0-4]\.)/.test(stdout.trim())) return runAgyPrint(options);
   }
@@ -774,7 +821,7 @@ const bundledCodex = desktopCodex();
 export const adapters = new Map([
   ['codex', { name: 'Codex', file: process.env.FERRY_CODEX_BIN || bundledCodex || 'codex', run: runCodex, branch: forkCodex }],
   ['claude', { name: 'Claude Code', file: process.env.FERRY_CLAUDE_BIN || 'claude', run: runClaude, branch: async () => null }],
-  ['agy', { name: 'Antigravity', file: process.env.FERRY_AGY_BIN || 'agy', run: runAgy, videoInput: false }],
+  ['agy', { name: 'Antigravity', file: process.env.FERRY_AGY_BIN || 'agy', run: runAgy, sideOnly: true, branch: async () => null, videoInput: false }],
 ]);
 
 const effortNames = { none: 'None', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', ultra: 'Ultra' };
