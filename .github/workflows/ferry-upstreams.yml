@@ -1,26 +1,26 @@
-name: Check upstream CLIs
-on:
-  schedule:
-    - cron: '37 3 * * *'
-  workflow_dispatch:
-
+name: Request context compaction review
+on: workflow_dispatch
 permissions: {}
 jobs:
-  check:
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+  review:
+    if: github.ref == 'refs/heads/ferry/request-review-compaction' && github.actor == 'caijialin0626'
     runs-on: ubuntu-latest
     timeout-minutes: 3
-    strategy:
-      fail-fast: false
-      matrix:
-        cli: [codex, claude, agy]
     permissions:
-      actions: write
+      contents: read
+      pull-requests: write
     steps:
-      - name: Queue a compatibility check
+      - name: Open the tested change for review
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          BRANCH: ${{ github.event.repository.default_branch }}
-          CLI: ${{ matrix.cli }}
-        run: gh workflow run ferry-issues.yml -R "$REPO" --ref "$BRANCH" -f mode=upstream -f cli="$CLI"
+        run: |
+          set -eu
+          head=ferry/context-compaction
+          test "$(gh api "repos/$REPO/git/ref/heads/$head" --jq .object.sha)" = d53dc50f5cafdbe7220f2950e060c39049661666
+          cat > "$RUNNER_TEMP/review.md" <<'BODY'
+          Display native Codex and Claude context compaction while it runs. Keep one completion marker in the chat at the point it occurred, including after a reload. Existing sessions record compactions on subsequent turns.
+
+          Verified with the 18-test Node suite and a Chromium browser fixture covering live status, reload during compaction and persisted completion. Claude coverage includes repeated boundaries and subagent events.
+          BODY
+          gh pr create -R "$REPO" --base main --head "$head" --title 'Show Codex and Claude context compaction in chat' --body-file "$RUNNER_TEMP/review.md"
