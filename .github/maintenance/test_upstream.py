@@ -33,8 +33,8 @@ class UpstreamTest(unittest.TestCase):
         release = json.dumps({"tag_name": "1.5.16", "prerelease": False, "draft": False, "body": "Notes"})
         ticket = {"number": 12, "state": "open", "body": "<!-- ferry:adapt -->\nfix"}
         for decision, existing, calls in [("covered", None, []), ("review", None, ["issues"]),
-                ("adapt", None, ["issues", "actions/workflows/ferry-issues.yml/dispatches"]),
-                ("adapt", ticket, ["actions/workflows/ferry-issues.yml/dispatches"])]:
+                ("adapt", None, ["issues", "actions/workflows/ferry-proposals.yml/dispatches"]),
+                ("adapt", ticket, ["actions/workflows/ferry-proposals.yml/dispatches"])]:
             with self.subTest(decision=decision, retry=bool(existing)), tempfile.TemporaryDirectory() as tmp, \
                     patch.dict(os.environ, BRANCH="main", GITHUB_OUTPUT=tmp+"/outputs", GITHUB_STEP_SUMMARY=tmp+"/summary"), \
                     patch.object(upstream, "command", return_value=release), \

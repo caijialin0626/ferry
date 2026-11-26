@@ -1,10 +1,10 @@
 # Ferry issue maintenance
 
-[Ferry issue maintainer](../workflows/ferry-issues.yml) runs on GitHub-hosted runners. An opened issue starts a bounded Codex triage. Spam and unrelated requests receive no comment. An actionable request starts development, and the issue receives progress, PR and release updates. The bot replies to unclear reports with a request for details.
+[Ferry issue maintainer](../workflows/ferry-proposals.yml) runs on GitHub-hosted runners. An opened issue starts a bounded Codex triage. Spam and unrelated requests receive no comment. An actionable request starts development, and the issue receives progress, a PR link and test results. The bot replies to unclear reports with a request for details.
 
 ## One-time setup
 
-Enable Actions and allow workflows to create pull requests in the repository's Actions settings. The workflow grants permissions per job. Automatic release fast-forwards the exact tested commit using a normal, non-forced push. Branch protection can reject this operation and leave the PR for review.
+Enable Actions and allow workflows to create pull requests in the repository's Actions settings. The workflow grants permissions per job. The bot pushes a proposal branch and opens a PR for maintainer approval and manual merge.
 
 Create two **repository Actions secrets**:
 
@@ -35,16 +35,16 @@ Use **Actions → Ferry issue maintainer → Run workflow** on the default branc
 | --- | --- |
 | `issue` | Process the specified open issue again, for example after the author clarifies the report or the target branch moves. |
 | `refresh` | Run a small Codex request and persist the current login if Codex rotates it. Also runs weekly. |
-| `verify` | Run the release gate against the current default branch without a model credential, PR or merge. |
+| `verify` | Run PR checks against the current default branch. |
 
 The workflow serializes use of the login. GitHub snapshots repository secrets when it queues a run. A run queued before the last rotation dispatches a fresh run. An expired or revoked login needs a new bootstrap. Fix a failed write-back before retrying. Credentials stay out of logs, caches, artifacts and the checkout. See the [Codex CI authentication guide](https://learn.chatgpt.com/docs/auth/ci-cd-auth).
 
-## Release criteria
+## Pull request checks
 
 - Automatic intake processes the first 20 issues opened per UTC day, with a maximum of three per author. Later issues remain open for maintainer dispatch. Manual dispatch can also process older reports. GitHub's concurrency queue holds up to 100 waiting runs.
 - Codex selects at most eight source, documentation or test files, produces exact text edits, and independently reviews the resulting diff against the issue. Workflow files, dependency manifests, binary assets and deployment configuration are outside the automatic edit set. Requests outside it remain for maintainers.
 - The proposal job validates paths and file modes separately. The test job installs locked dependencies, then runs syntax checks, the integration suite and Chromium end-to-end tests with a simulated external CLI. The real browser signs in to Ferry, sends a message, receives a reply and checks history after reload.
-- Test execution has no model or publishing credential, no external network, and a read-only source tree. A failed test or review leaves the PR open. Before release, the workflow rechecks the issue text, PR state, head SHA and parent commit. A concurrent default-branch update makes the fast-forward fail instead of releasing an untested combination.
+- Test execution has no model or publishing credential, no external network, and a read-only source tree. The workflow reports the tested commit and results on the PR and issue. The PR stays open for the maintainer to approve and merge. GitHub closes the linked issue on merge.
 
 ## Upstream CLI compatibility
 
@@ -53,7 +53,7 @@ The workflow serializes use of the login. GitHub snapshots repository secrets wh
 The first check assesses the current stable release. Later checks process up to four newer stable versions per CLI, oldest first. A successful assessment records its version on the dedicated `ferry/upstream-state` branch. An unchanged version skips Codex. The run summary explains each assessment.
 
 - **Covered.** Existing adapter behavior already handles the change, including new models returned by the native catalog.
-- **Adapt.** A concrete mismatch opens a tracking issue and explicitly dispatches the issue workflow for development, independent review, and the normal release gate.
+- **Adapt.** A concrete mismatch opens a tracking issue and explicitly dispatches the issue workflow for development, independent review, tests and maintainer approval.
 - **Review.** Ambiguous changes or missing release notes open an issue for a maintainer.
 
 Hosts keep using the CLI versions installed by their operators. To retry a single check, dispatch **Ferry issue maintainer** with mode `upstream` and select the CLI.

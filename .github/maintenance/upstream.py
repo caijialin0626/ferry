@@ -150,7 +150,7 @@ def assess(cli, tags):
         body = f"<!-- ferry:{decision} -->\n{summary}\n\n{links}\n\n[Compatibility check]({LINK})"
         ticket = api("issues", {"title": title, "body": body})
     if decision == "adapt" and ticket["state"] == "open":
-        api("actions/workflows/ferry-issues.yml/dispatches", {"ref": os.environ["BRANCH"],
+        api("actions/workflows/ferry-proposals.yml/dispatches", {"ref": os.environ["BRANCH"],
             "inputs": {"mode": "issue", "issue": str(ticket["number"])}})
     with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as file:
         print(f"### {cli} {' → '.join(tags)}\n\n{decision} · {summary}\n\n{links}", file=file)
