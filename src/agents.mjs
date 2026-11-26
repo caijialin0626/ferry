@@ -251,7 +251,85 @@ async function runClaude({ file, cwd, nativeId, forkSource, branchKind, prompt, 
   }
 }
 
-async function runAgy({ file, cwd, nativeId, prompt, model, effort, signal, emit, saveNative }) {
+// agy's print protocol accepts text blocks only. ACP can attach native images
+// to the same conversation IDs used by --conversation on text-only turns.
+async function runAgyImages({ file, cwd, nativeId, prompt, model, effort, images, signal, emit, saveNative }) {
+  const process = nativeProcess(file, ['acp', '--dangerously-skip-permissions'], cwd, signal);
+  const lines = process.lines[Symbol.asyncIterator]();
+  let nextId = 0;
+  let sessionId;
+  const tools = new Map();
+
+  function write(message) {
+    return new Promise((resolve, reject) => process.child.stdin.write(
+      JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n', error => error ? reject(error) : resolve()));
+  }
+
+  async function request(method, params) {
+    const id = ++nextId;
+    await write({ id, method, params });
+    for (;;) {
+      const line = await lines.next();
+      signal.throwIfAborted();
+      if (line.done) throw new Error((await process.closed).stderr || 'Antigravity closed the image session.');
+      const message = parse(line.value);
+      if (!message) continue;
+      if (message.method && message.id !== undefined) {
+        // We advertise no filesystem or terminal services. Interactive approvals
+        // must never be silently granted by the client.
+        if (message.method === 'session/request_permission') {
+          await write({ id: message.id, result: { outcome: { outcome: 'cancelled' } } });
+        } else await write({ id: message.id, error: { code: -32601, message: 'Unsupported client method' } });
+        continue;
+      }
+      if (message.id === id) {
+        if (message.error) throw new Error(message.error.message || 'Antigravity rejected the image request.');
+        return message.result;
+      }
+      // Loading a session can replay historical messages.
+      if (method !== 'session/prompt' || message.method !== 'session/update' || message.params?.sessionId !== sessionId) continue;
+      const update = message.params.update;
+      if (update?.sessionUpdate === 'agent_message_chunk' && update.content?.type === 'text') emit('delta', update.content.text);
+      if (update?.sessionUpdate === 'tool_call' || update?.sessionUpdate === 'tool_call_update') {
+        const { toolCallId, title } = update;
+        if (!toolCallId || !title || tools.get(toolCallId)?.title === title) continue;
+        const previous = tools.get(toolCallId);
+        const index = previous?.index ?? tools.size;
+        tools.set(toolCallId, { title, index });
+        emit(previous ? 'toolDetail' : 'tool', title, index);
+      }
+    }
+  }
+
+  try {
+    const { agentCapabilities } = await request('initialize', { protocolVersion: 1, clientCapabilities: {} });
+    if (!agentCapabilities?.promptCapabilities?.image) throw new Error('This Antigravity CLI does not support image prompts.');
+    const params = { cwd, mcpServers: [] };
+    if (nativeId) {
+      sessionId = nativeId;
+      const method = agentCapabilities.sessionCapabilities?.resume ? 'session/resume' : 'session/load';
+      await request(method, { ...params, sessionId });
+    } else {
+      const session = await request('session/new', params);
+      sessionId = session?.sessionId;
+      if (!sessionId) throw new Error('Antigravity did not return a conversation ID.');
+      saveNative(sessionId);
+    }
+    if (model) await request('session/set_model', { sessionId, modelId: model });
+    else if (effort) await request('session/set_config_option', { sessionId, configId: 'thought_level', value: effort });
+    const blocks = images.map(image => ({ type: 'image', mimeType: image.mediaType, data: image.content.toString('base64') }));
+    if (prompt) blocks.unshift({ type: 'text', text: prompt });
+    const result = await request('session/prompt', { sessionId, prompt: blocks });
+    if (result?.stopReason !== 'end_turn') throw new Error('Antigravity ended the image turn: ' + (result?.stopReason || 'unknown reason'));
+  } finally {
+    process.stop();
+    await process.closed;
+  }
+}
+
+async function runAgy(options) {
+  if (options.images?.length) return runAgyImages(options);
+  const { file, cwd, nativeId, prompt, model, effort, signal, emit, saveNative } = options;
   const args = ['--input-format', 'stream-json', '--output-format', 'stream-json', '--dangerously-skip-permissions'];
   if (nativeId) args.push('--conversation', nativeId);
   if (model) args.push('--model', model);
@@ -637,7 +715,7 @@ const bundledCodex = desktopCodex();
 export const adapters = new Map([
   ['codex', { name: 'Codex', file: process.env.FERRY_CODEX_BIN || bundledCodex || 'codex', run: runCodex, branch: forkCodex }],
   ['claude', { name: 'Claude Code', file: process.env.FERRY_CLAUDE_BIN || 'claude', run: runClaude, branch: async () => null }],
-  ['agy', { name: 'Antigravity', file: process.env.FERRY_AGY_BIN || 'agy', run: runAgy, steer: false, mediaInput: false }],
+  ['agy', { name: 'Antigravity', file: process.env.FERRY_AGY_BIN || 'agy', run: runAgy, steer: false, videoInput: false }],
 ]);
 
 const effortNames = { none: 'None', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', ultra: 'Ultra' };
@@ -772,14 +850,14 @@ async function listAgyModels() {
   const models = stdout.split(/\r?\n/).flatMap(line => {
     const [id, name] = line.split('\t', 2);
     return /^[a-z0-9][a-z0-9_.:/\[\]-]{0,91}$/i.test(id) && name?.trim()
-      ? [{ id, name: name.trim(), efforts: [], imageInput: false }] : [];
+      ? [{ id, name: name.trim(), efforts: [], imageInput: true }] : [];
   });
   if (!models.length) throw new Error('Antigravity returned no model catalog.');
-  return { models: [{ id: '', name: 'Default model', efforts: [], imageInput: false }, ...models], defaultEffort: '' };
+  return { models: [{ id: '', name: 'Default model', efforts: [], imageInput: true }, ...models], defaultEffort: '' };
 }
 
 function catalogFallback(agent) {
-  if (agent !== 'claude') return { models: [{ id: '', name: 'Default model', efforts: [], imageInput: agent !== 'agy' }], defaultEffort: '', unavailable: true };
+  if (agent !== 'claude') return { models: [{ id: '', name: 'Default model', efforts: [], imageInput: true }], defaultEffort: '', unavailable: true };
   const efforts = effortOptions(['low', 'medium', 'high', 'xhigh', 'max']);
   return { models: [{ id: '', name: 'Default model' }, { id: 'sonnet', name: 'Sonnet' },
     { id: 'opus', name: 'Opus' }, { id: 'haiku', name: 'Haiku' }]
@@ -814,7 +892,7 @@ export async function discoverAgents() {
     try {
       const { stdout } = await exec(adapter.file, ['--version'], { timeout: 3500, maxBuffer: 8192, env: cliEnv() });
       return { id, name: adapter.name, version: stdout.trim(), available: true,
-        ...(adapter.mediaInput === false && { mediaInput: false }) };
+        ...(adapter.videoInput === false && { videoInput: false }) };
     } catch {
       return { id, name: adapter.name, available: false };
     }

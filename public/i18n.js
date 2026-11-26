@@ -346,6 +346,8 @@ const zh = {
   "This request ID is already in use.": "此请求 ID 已被使用。",
   "Titles must be a single line of 1 to 120 characters.": "标题须为 1 到 120 字的单行文字。",
   "Choose a chat setting to change.": "请选择要修改的对话设置。",
+  "This agent CLI does not accept videos.": "这个 Agent 暂不支持视频。",
+  "This Antigravity CLI does not support image prompts.": "当前版本的 Antigravity CLI 不支持图片输入。",
   "This agent CLI accepts text messages only.": "这个 Agent 的命令行接入支持文本消息。",
   "Enter a message or add images or a video.": "请输入消息或添加图片、视频。",
   "Invalid turn for guidance.": "引导的轮次无效。",
