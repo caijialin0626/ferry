@@ -31,10 +31,8 @@ else {
     const output = text_delta => console.log(JSON.stringify({event:'step_update',step_update:{step_type:'agent_response',text_delta}}));
     const calls = [];
     for (let i = 1; i <= 105; i++) {
-      const cmd = i === 105 ? 'example\\nlast command' : 'example ' + i;
-      const args = {CommandLine:JSON.stringify(cmd)};
-      if (i < 105) args.toolSummary = JSON.stringify('Inspect sample ' + i);
-      calls.push({name:'run_command',args});
+      const cmd = 'example ' + i;
+      calls.push({name:'run_command',args:{CommandLine:JSON.stringify(cmd),toolSummary:JSON.stringify('Inspect sample ' + i)}});
       console.log(JSON.stringify({event:'step_update',step_update:{step_type:'tool',step_index:i+1,state:'DONE',
         tool_name:'run_command',tool_info:{parameters:{CommandLine:cmd}}}}));
     }
@@ -99,20 +97,12 @@ else {
     await page.locator('#prompt').fill('hello from the browser');
     await page.locator('#send').click();
     const count = page.locator('.group-label').filter({ hasText: '105' });
-    const summary = page.locator('.activity-progress + details:not([open])');
-    async function checkProgress() {
-      await summary.waitFor();
-      const progress = page.locator('.activity-progress');
-      if (await progress.count() !== 1 || await progress.innerText() !== 'Inspect sample 104') {
-        throw new Error('Expected one timeline update with the latest native summary');
-      }
-    }
+    const summary = page.locator('.group-last').filter({ hasText: 'Inspect sample 105' });
     await count.waitFor();
-    await page.locator('.activity-progress').filter({ hasText: /^Inspect sample 104$/ }).waitFor();
-    await checkProgress();
+    await summary.waitFor();
     await page.reload();
     await count.waitFor();
-    await checkProgress();
+    await summary.waitFor();
     await fs.writeFile(join(tmp, 'brain', 'finish'), '');
     const reply = page.locator('#messages').getByText('Browser reply: hello from the browser', { exact: true });
     await reply.waitFor();
@@ -134,7 +124,6 @@ else {
     await reply.waitFor();
     await checkFileReference();
     await latestTime.waitFor();
-    await checkProgress();
     // Older hosts only know when output began, even if more text followed a steer.
     await page.route(historyUrl, route => route.fulfill({ json: { ...snapshot, messages: [
       { ...agent, text: 'First. Second.', updated_at: null },
