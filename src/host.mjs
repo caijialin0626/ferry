@@ -727,7 +727,6 @@ const server = createServer(async (req, res) => {
       if (steer !== undefined && (typeof steer !== 'string' || !/^[a-zA-Z0-9-]{20,80}$/.test(steer))) {
         throw new HttpError(400, 'Invalid turn for guidance.');
       }
-      if (steer && adapters.get(session.agent)?.steer === false) throw new HttpError(409, 'Wait for the current turn to finish before sending.');
       const key = createHash('sha256').update(JSON.stringify([input.text, model, effort, images.map(image =>
         [image.name, image.mediaType, image.content.toString('base64')]), ...(steer && !receipt ? [steer] : []),
         ...(video ? [[video.name, video.mediaType, createHash('sha256').update(video.content).digest('hex')]] : [])])).digest('hex');

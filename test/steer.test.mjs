@@ -112,6 +112,44 @@ for await (const line of lines) {
     ['image', { content: Buffer.from(png, 'base64'), mediaType: 'image/png' }]]);
 });
 
+test('agy hands a live ACP turn to text and image guidance and keeps the final reply', { timeout: 5000 }, async t => {
+  const { ready, done, emitted, current } = await start(t, 'agy', `
+if (process.argv.includes('--version')) { console.log('1.5.18'); process.exit(0); }
+let active;
+for await (const line of lines) {
+  const { id, method, params } = JSON.parse(line);
+  const end = id => send({ id, result: { stopReason: 'end_turn' } });
+  const say = text => send({ method: 'session/update', params: { sessionId: 'same', update: {
+    sessionUpdate: 'agent_message_chunk', content: { type: 'text', text },
+  } } });
+  if (method === 'initialize') send({ id, result: { agentCapabilities: { promptCapabilities: { image: true } } } });
+  else if (method === 'session/new') send({ id, result: { sessionId: 'same' } });
+  else if (method === 'session/prompt') {
+    assert.equal(params.sessionId, 'same');
+    const text = params.prompt[0].text;
+    if (text === 'reject') { send({ id, error: { message: 'guidance refused' } }); continue; }
+    if (active) end(active);
+    active = id;
+    if (text === 'original') say('before');
+    if (text === 'last') {
+      assert.equal(params.prompt[1].type, 'image');
+      assert.equal(Buffer.from(params.prompt[1].data, 'base64').toString(), 'image');
+      say('after');
+      end(id);
+    }
+  }
+}
+`);
+  const steer = await ready;
+  await assert.rejects(steer({ text: 'reject', images: [] }), /guidance refused/);
+  await steer({ text: 'first update', images: [] });
+  await steer({ text: 'last', images });
+  await done;
+  assert.equal(current(), undefined);
+  assert.deepEqual(emitted, [['delta', 'before'], ['delta', 'after']]);
+  await assert.rejects(steer({ text: 'late', images: [] }), /ended/);
+});
+
 test('Claude sends steering input through the existing process before the result', { timeout: 5000 }, async t => {
   const { ready, done, emitted, current } = await start(t, 'claude', `
 const session_id = process.argv[process.argv.indexOf('--session-id') + 1];
