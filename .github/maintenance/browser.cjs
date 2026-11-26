@@ -20,6 +20,7 @@ async function main() {
     const cli = join(tmp, 'agy');
     await fs.writeFile(cli, `#!/usr/bin/env node
 if (process.argv.includes('--version')) console.log('agy-test');
+else if (process.argv[2] === 'acp') require(${JSON.stringify(join(process.cwd(), '.github/maintenance/agy-image-fixture.cjs'))});
 else if (process.argv.includes('models')) console.log('demo\\tDemo');
 else {
   let input = '';
@@ -124,6 +125,17 @@ else {
     await reply.waitFor();
     await checkFileReference();
     await latestTime.waitFor();
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+    if (await page.locator('#file').getAttribute('accept') !== 'image/*') throw new Error('Expected the Antigravity image picker');
+    const chooser = page.waitForEvent('filechooser');
+    await page.locator('#attach').click();
+    await (await chooser).setFiles({ name: 'sample.png', mimeType: 'image/png', buffer: png });
+    await page.locator('#send').click();
+    const imageReply = page.locator('.markdown').filter({ hasText: /resumed\|/ });
+    await imageReply.waitFor();
+    await page.reload();
+    await imageReply.waitFor();
+    await page.locator('#messages img[alt="sample.png"]').waitFor();
     // Older hosts only know when output began, even if more text followed a steer.
     await page.route(historyUrl, route => route.fulfill({ json: { ...snapshot, messages: [
       { ...agent, text: 'First. Second.', updated_at: null },

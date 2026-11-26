@@ -714,8 +714,8 @@ const server = createServer(async (req, res) => {
       }
       const images = readImages(input.images);
       const video = readVideo(input.video);
-      if (adapters.get(session.agent)?.mediaInput === false && (images.length || video)) {
-        throw new HttpError(400, 'This agent CLI accepts text messages only.');
+      if (video && adapters.get(session.agent)?.videoInput === false) {
+        throw new HttpError(400, 'This agent CLI does not accept videos.');
       }
       if (typeof input.id !== 'string' || !/^[a-zA-Z0-9-]{20,80}$/.test(input.id) ||
           typeof input.text !== 'string' || input.text.length > 32000 || (!input.text.trim() && !images.length && !video)) {

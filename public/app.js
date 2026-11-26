@@ -1341,19 +1341,25 @@ function mediaType(file) {
   const extension = file.name.toLowerCase().split('.').at(-1);
   return mediaTypes.has(type) ? type : VIDEO_TYPES.get(extension) ?? IMAGE_EXTENSIONS.get(extension) ?? type;
 }
-const agentAcceptsMedia = () => inventories.get(machineId)?.agents.find(agent => agent.id === $('agent').value)?.mediaInput !== false;
-const acceptsVideo = () => agentAcceptsMedia() && inventories.get(machineId)?.machine.videoInput === true;
+const selectedAgentInfo = () => inventories.get(machineId)?.agents.find(agent => agent.id === $('agent').value);
+function acceptsVideo() {
+  const agent = selectedAgentInfo();
+  return agent?.mediaInput !== false && agent?.videoInput !== false && inventories.get(machineId)?.machine.videoInput === true;
+}
 const imageCountLimit = () => inventories.get(machineId)?.machine.maxImages ?? 3;
 const isVideo = item => item.mediaType?.startsWith('video/');
 function acceptsImages() {
   const info = optionCache.get(resourceKey(machineId, $('agent').value));
   const model = session?.state === 'running' ? session.model : $('model').value;
-  return agentAcceptsMedia() && info?.models?.find(item => item.id === model)?.imageInput !== false;
+  return selectedAgentInfo()?.mediaInput !== false && info?.models?.find(item => item.id === model)?.imageInput !== false;
 }
 function updateAttachButton() {
   const limit = imageCountLimit();
   const images = acceptsImages() && attachments.filter(item => !isVideo(item)).length < limit;
   const video = acceptsVideo() && !attachments.some(isVideo);
+  const types = images ? ['image/*'] : [];
+  if (video) for (const [ext, mime] of VIDEO_TYPES) types.push(mime, '.' + ext);
+  $('file').accept = types.join(',');
   $('attach').disabled = attachmentDraftLoading || blocked() || (!images && !video);
   $('attach').title = !video ? t('Add images (up to {n} per message)', { n: limit }) : images ?
     t('Add images or a video (up to {n} images, video ≤ 8 MiB)', { n: limit }) : t('Add a video (≤ 8 MiB)');

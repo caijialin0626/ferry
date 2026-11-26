@@ -280,6 +280,7 @@ createInterface({input:process.stdin}).on('line',raw=>{
   await writeFile(agy, `#!/usr/bin/env node
 const args=process.argv.slice(2);
 const line=x=>console.log(JSON.stringify(x));
+if(args[0]==='acp') { require(${JSON.stringify(join(process.cwd(), '.github/maintenance/agy-image-fixture.cjs'))}); return; }
 if(args.includes('--version')) { console.log('1.5.15'); process.exit(0); }
 if(args.includes('models')) {
   require('node:fs').appendFileSync(process.argv[1] + '.calls', 'x');
@@ -342,8 +343,10 @@ require('node:readline').createInterface({input:process.stdin}).on('line',raw=>{
   const initial = await call('overview');
   assert.equal(initial.machine.name, hostname());
   assert.deepEqual(initial.agents.map(a => a.available), [false, true, true]);
-  assert.equal(initial.agents.find(a => a.id === 'agy').mediaInput, false);
-  assert.equal((await call('agents/agy/options')).models[1].id, 'gemini-fixture-high');
+  assert.equal(initial.agents.find(a => a.id === 'agy').videoInput, false);
+  const agyModels = (await call('agents/agy/options')).models;
+  assert.equal(agyModels[1].id, 'gemini-fixture-high');
+  assert.ok(agyModels.every(model => model.imageInput));
   const { machines } = await call('machines?refresh=1');
   assert.deepEqual(machines.map(({ id, name, online }) => [id, name, online]), [
     ['local', hostname(), true], ['secondary', hostname(), true],
@@ -680,6 +683,21 @@ require('node:readline').createInterface({input:process.stdin}).on('line',raw=>{
   assert.deepEqual(agyMessages.filter(m => m.role === 'tool').map(m => m.text), ['Shell · pwd']);
   assert.equal(agyMessages.at(-1).text, 'start:hello');
   assert.equal((await native('next')).at(-1).text, 'resume:next');
+  const picture = { name: 'fixture.png', mediaType: 'image/png', data: png };
+  // Distinct PNG sizes make attachment order observable in the fixture reply.
+  const second = { ...picture, name: 'other.png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC' };
+  await call(agyUrl + '/send', { id: randomUUID(), text: 'compare', images: [picture, second] }, 202);
+  const compared = await finished(agyUrl);
+  assert.equal(compared.session.native_id, 'agy-native-fixture');
+  assert.equal(compared.messages.at(-1).text, 'resumed|gemini-fixture-high|compare|' + png.length + '|' + second.data.length);
+  assert.deepEqual(compared.messages.at(-2).images.map(image => image.name), ['fixture.png', 'other.png']);
+  assert.equal((await native('after images')).at(-1).text, 'resume:after images');
+  const fresh = await call('sessions', { project: null, agent: 'agy' }, 201);
+  const freshUrl = 'sessions/' + fresh.id;
+  await call(freshUrl + '/send', { id: randomUUID(), text: '', images: [picture] }, 202);
+  const firstImage = await finished(freshUrl);
+  assert.equal(firstImage.session.native_id, 'agy-native-fixture');
+  assert.equal(firstImage.messages.at(-1).text, 'new|default||' + png.length);
 });
 
 test('Tailscale identity mode accepts only the configured user and has no access-code login', { timeout: 10000 }, async t => {
