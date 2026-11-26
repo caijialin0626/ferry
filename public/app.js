@@ -1988,7 +1988,16 @@ function drawActivity(group, tools, running) {
   group.toolIcon.toggleAttribute('hidden', running);
   group.toolPulse.hidden = !running;
   if (group.label.textContent !== label) group.label.textContent = label;
-  group.lastTool.hidden = !running || !last;
+  // agy puts its native summary on the first line, followed by the tool
+  // detail. A raw shell command can also span lines, but starts with “Shell · ”.
+  const described = session?.agent === 'agy' && tools.findLast(entry =>
+    entry.text.includes('\n') && !entry.text.startsWith('Shell · '));
+  if (described) {
+    group.progress ??= el('p', 'activity-progress');
+    const summary = described.text.split('\n', 1)[0];
+    if (group.progress.textContent !== summary) group.progress.textContent = summary;
+  } else group.progress = undefined;
+  group.lastTool.hidden = !running || !last || Boolean(described);
   if (group.lastTool.textContent !== last) group.lastTool.textContent = last;
   group.node.classList.toggle('running', running);
 }
@@ -2072,6 +2081,7 @@ function drawTurn(turn) {
     const running = turn === turns.at(-1) && session?.state === 'running' && offset === text.length;
     drawActivity(group, tools, running);
     visibleGroups.set(key, group);
+    if (group.progress) nodes.push(group.progress);
     nodes.push(group.node);
   }
   const revealing = turn.flow.some(entry => reveals.has(entry));
