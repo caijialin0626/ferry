@@ -821,7 +821,7 @@ const bundledCodex = desktopCodex();
 export const adapters = new Map([
   ['codex', { name: 'Codex', file: process.env.FERRY_CODEX_BIN || bundledCodex || 'codex', run: runCodex, branch: forkCodex }],
   ['claude', { name: 'Claude Code', file: process.env.FERRY_CLAUDE_BIN || 'claude', run: runClaude, branch: async () => null }],
-  ['agy', { name: 'Antigravity', file: process.env.FERRY_AGY_BIN || 'agy', run: runAgy, sideOnly: true, branch: async () => null, videoInput: false }],
+  ['agy', { name: 'Antigravity', file: process.env.FERRY_AGY_BIN || 'agy', run: runAgy, sideOnly: true, branch: async () => null }],
 ]);
 
 const effortNames = { none: 'None', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max', ultra: 'Ultra' };

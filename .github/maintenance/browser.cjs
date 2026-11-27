@@ -113,6 +113,15 @@ else process.exit(2);`, { mode: 0o700 });
     await page.reload();
     await imageReply.waitFor();
     await page.locator('#messages img[alt="sample.png"]').waitFor();
+    const clip = Buffer.from('000000186674797069736f6d0000000069736f6d6d703432', 'hex');
+    await page.locator('#file').setInputFiles([
+      { name: 'clip.mp4', mimeType: 'video/mp4', buffer: clip },
+      { name: 'still.png', mimeType: 'image/png', buffer: png },
+    ]);
+    await page.locator('#send').click();
+    await page.locator('.markdown').getByText('Read MP4: 24 bytes, 1 images.').waitFor();
+    await page.reload();
+    await page.locator('#messages video').waitFor();
     // Older hosts only know when output began, even if more text followed a steer.
     await page.route(historyUrl, route => route.fulfill({ json: { ...snapshot, messages: [
       { ...agent, text: 'First. Second.', updated_at: null },
