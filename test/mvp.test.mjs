@@ -675,15 +675,16 @@ require('node:readline').createInterface({input:process.stdin}).on('line',raw=>{
   const videoChat = await call('sessions', { project: null, agent: 'agy' }, 201);
   const videoChatUrl = 'sessions/' + videoChat.id;
   const clipRequest = { id: randomUUID(), text: '', video };
-  if (agyAcceptsVideo) {
-    await call(videoChatUrl + '/send', clipRequest, 202);
-    const snapshot = await finished(videoChatUrl);
-    assert.equal(snapshot.session.state, 'idle');
-    assert.equal(snapshot.messages.find(message => message.role === 'user').images[0].name, video.name);
-  } else {
-    await call(videoChatUrl + '/send', clipRequest, 400);
-    assert.deepEqual((await call(videoChatUrl)).messages, []);
-  }
+  assert.ok(agyAcceptsVideo);
+  await call(videoChatUrl + '/send', clipRequest, 202);
+  const videoSnapshot = await finished(videoChatUrl);
+  assert.equal(videoSnapshot.session.state, 'idle');
+  assert.equal(videoSnapshot.messages.at(-1).text, 'Read MP4: ' + clip.length + ' bytes, 0 images.');
+  const savedVideo = videoSnapshot.messages.find(message => message.role === 'user').images[0];
+  assert.equal(savedVideo.name, video.name);
+  const prefix = await raw(savedVideo.url, undefined, { cookie, headers: { Range: 'bytes=0-23' } });
+  assert.equal(prefix.status, 206);
+  assert.deepEqual(Buffer.from(await prefix.arrayBuffer()), clip.subarray(0, 24));
   const native = async text => {
     await call(agyUrl + '/send', { id: randomUUID(), text, model:'gemini-fixture-high' }, 202);
     const result = await finished(agyUrl);

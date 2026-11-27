@@ -771,7 +771,7 @@ const server = createServer(async (req, res) => {
         const file = await open(path, 'wx', 0o600);
         temporaryVideo = path;
         try { await file.writeFile(video.content); } finally { await file.close(); }
-        // Agent CLIs have no native video input, so pass only the file path on the execution machine.
+        // Give the CLI a local path so its file tools can open the original video.
         prompt += (prompt ? '\n\n' : '') + 'Attached video: ' + JSON.stringify(path);
       }
       async function checkArchive(client, current) {

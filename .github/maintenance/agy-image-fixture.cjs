@@ -52,7 +52,12 @@ createInterface({ input: process.stdin }).on('line', async line => {
         },
       } } });
     }
-    if (side) {
+    const clipPath = /(?:^|\n)Attached video: (".*")$/.exec(text);
+    if (clipPath) {
+      const clip = fs.readFileSync(JSON.parse(clipPath[1]));
+      assert.equal(clip.toString('ascii', 4, 8), 'ftyp');
+      update('Read MP4: ' + clip.length + ' bytes, ' + images.length + ' images.');
+    } else if (side) {
       assert.ok(!process.argv.includes('--dangerously-skip-permissions'));
       assert.ok(fs.existsSync('.agents/agents/ferry-reader.md'));
       const snapshot = params.prompt.find(block => block.type === 'resource');
