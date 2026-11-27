@@ -40,6 +40,9 @@ const ICONS = {
   up: 'M12 19V7M7 12l5-5 5 5',
   paperclip: 'M8 13.5l6.8-6.8a2 2 0 0 1 2.8 2.8l-8 8a4 4 0 0 1-5.7-5.7l8.5-8.5a5.5 5.5 0 0 1 7.8 7.8l-8.7 8.7',
   search: 'M15.8 15.8 20 20M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0Z',
+  settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm7.4-1.5a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V19.5a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H4.5a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V4.5a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1h.09a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z',
+  sliders: 'M4 7h6m4 0h6M10 7a2 2 0 1 0 4 0 2 2 0 0 0-4 0ZM4 17h10m4 0h2M14 17a2 2 0 1 0 4 0 2 2 0 0 0-4 0Z',
+  keyboard: 'M4 6.5h16a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 16V8A1.5 1.5 0 0 1 4 6.5ZM6.5 10h.01M10 10h.01M13.5 10h.01M17.5 10h.01M8 14h8',
 };
 function icon(name) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -215,7 +218,20 @@ function enhance(root) {
     const lang = /language-([\w+#.-]+)/.exec(code?.className || '')?.[1] || '';
     const block = el('div', 'code-block');
     const head = el('div', 'code-head');
-    head.append(el('span', 'code-lang', lang || t('Code')));
+    const copyBtn = btn('code-copy', [icon('copy'), el('span', '', t('Copy'))], async () => {
+      const ok = await copyText(code?.textContent ?? pre.textContent ?? '');
+      const feedback = ok ? t('Copied') : t('Copy failed');
+      copyBtn.setAttribute('aria-label', feedback);
+      copyBtn.classList.toggle('copied', ok);
+      copyBtn.replaceChildren(icon(ok ? 'check' : 'x'), el('span', '', feedback));
+      setTimeout(() => {
+        if (!copyBtn.isConnected) return;
+        copyBtn.setAttribute('aria-label', t('Copy code'));
+        copyBtn.classList.remove('copied');
+        copyBtn.replaceChildren(icon('copy'), el('span', '', t('Copy')));
+      }, 1600);
+    }, t('Copy code'));
+    head.append(el('span', 'code-lang', lang || t('Code')), copyBtn);
     pre.replaceWith(block);
     block.append(head, pre);
   }
@@ -436,6 +452,8 @@ function loginView() {
   attachmentDraftLoading = false;
   releaseAttachments();
   if ($('quick-dialog')?.open) $('quick-dialog').close();
+  if ($('settings-dialog')?.open) $('settings-dialog').close();
+  $('app').classList.remove('shortcut-hint');
   $('app').hidden = true;
   $('login').hidden = authMode === 'tailnet';
   $('tailnet-required').hidden = authMode !== 'tailnet';
@@ -572,6 +590,7 @@ function moreBtn(key, label) {
   return node;
 }
 const orderedGroups = new Map();
+let pinnedSessionShortcuts = [];
 let rowDrag;
 const sessionKey = item => resourceKey(item.machine, item.id);
 function orderRows(items, scope) {
@@ -594,20 +613,27 @@ function moveRow(scope, from, to, before) {
   saveNav();
   drawNav();
 }
-function sessionRow(item, sub, scope) {
+function sessionRow(item, sub, scope, shortcut = 0) {
   const project = projectOf(item.project, item.machine);
   const key = 's:' + resourceKey(item.machine, item.id);
   const current = pendingSession ? pendingSession.id === item.id && pendingSession.target === item.machine : isCurrentSession(item.id, item.machine);
-  const row = el('div', 'row session-row' + (current ? ' active' : '') + (menuFor === key ? ' menu-open' : ''));
+  const row = el('div', 'row session-row' + (current ? ' active' : '') + (menuFor === key ? ' menu-open' : '') + (shortcut ? ' has-shortcut' : ''));
   const main = btn('row-main', [], () => openSession(item.id, { target: item.machine }).catch(error => setError(error.message)));
   main.dataset.key = key;
-  main.title = (item.title || t('New chat')) + ' · ' + machineName(item.machine);
-  main.setAttribute('aria-label', main.title);
+  const shortcutLabel = shortcut ? (appleKeys ? `⌘${shortcut}` : `Ctrl+${shortcut}`) : '';
+  main.title = (item.title || t('New chat')) + ' · ' + machineName(item.machine) + (shortcutLabel ? ` (${shortcutLabel})` : '');
+  main.setAttribute('aria-label', (item.title || t('New chat')) + ' · ' + machineName(item.machine));
+  if (shortcut) main.setAttribute('aria-keyshortcuts', (appleKeys ? 'Meta+' : 'Control+') + shortcut);
   if (current) main.setAttribute('aria-current', 'page');
   main.append(el('span', 'row-title', item.title || t('New chat')));
   if (sub) main.append(el('span', 'row-sub', sub));
   main.append(statusDot(item) ?? el('span', 'row-time', relTime(item.updated)));
   row.append(main, moreBtn(key, t('Chat actions')));
+  if (shortcut) {
+    const badge = el('kbd', 'row-shortcut', String(shortcut));
+    badge.setAttribute('aria-hidden', 'true');
+    row.append(badge);
+  }
   if ((orderedGroups.get(scope)?.length ?? 0) > 1) {
     row.dataset.orderScope = scope;
     row.dataset.orderKey = sessionKey(item);
@@ -730,8 +756,13 @@ function drawNav() {
   const archivedSessions = orderRows(sessions.filter(item => item.archived && !projectOf(item.project, item.machine)?.archived).sort(byUpdated), 'archivedSessions');
   const label = item => [projectOf(item.project, item.machine)?.name, machineName(item.machine)].filter(Boolean).join(' · ');
   const groups = [];
-  if (pinned.length) groups.push(group('pinned', t('Pinned'), pinned.length, pinned.map(item =>
-    item.agent ? sessionRow(item, label(item), 'pinned') : projectBlock(item))));
+  pinnedSessionShortcuts = [];
+  if (pinned.length) groups.push(group('pinned', t('Pinned'), pinned.length, pinned.map(item => {
+    if (!item.agent) return projectBlock(item);
+    const shortcut = pinnedSessionShortcuts.length < 9 ? pinnedSessionShortcuts.push(item) : 0;
+    return sessionRow(item, label(item), 'pinned', shortcut);
+  })));
+  if (!pinnedSessionShortcuts.length) $('app').classList.remove('shortcut-hint');
   const addProject = iconBtn('folder-plus', t('New project'), showFolders, 'group-act');
   addProject.dataset.key = 'a:projects';
   const projectRows = !active.length && !pinnedProjects.length ? [el('p', 'nav-hint', t('Open a folder to create a project.'))] : active.map(projectBlock);
@@ -883,6 +914,7 @@ function selectQuickTarget({ item, project }) {
   else drawer(false);
 }
 function openQuickSwitch() {
+  setShortcutHint(false);
   const dialog = $('quick-dialog');
   if (dialog.open) { dialog.close(); return; }
   const input = $('quick-search');
@@ -896,6 +928,7 @@ if ($('quick-open')) {
   $('quick-open').hidden = false;
   $('quick-open').onclick = openQuickSwitch;
   $('quick-close').onclick = () => $('quick-dialog').close();
+  $('quick-dialog').addEventListener('click', event => { if (event.target === $('quick-dialog')) $('quick-dialog').close(); });
   $('quick-search').addEventListener('input', () => drawQuickResults());
   $('quick-search').addEventListener('keydown', event => {
     if (event.isComposing || event.keyCode === 229) return;
@@ -2276,13 +2309,14 @@ async function notifyResult(item, key) {
 $('notification-toggle').onclick = async () => {
   const button = $('notification-toggle');
   button.disabled = true;
+  if ($('general-setting-status')) $('general-setting-status').textContent = '';
   try {
     if (notificationsEnabled()) localStorage.removeItem(notificationKey);
     else if (await Notification.requestPermission() === 'granted') {
       await notificationWorker();
       localStorage.setItem(notificationKey, '1');
     }
-  } catch { $('machine-scan-result').textContent = t('Could not turn on notifications.'); }
+  } catch { if ($('general-setting-status')) $('general-setting-status').textContent = t('Could not turn on notifications.'); }
   finally { drawNotificationSettings(); }
 };
 function observeResult(item, key) {
@@ -2370,14 +2404,21 @@ async function refresh(detect = false, quiet = false) {
     for (const id of inventories.keys()) if (!registered.has(id)) inventories.delete(id);
     if (detect) for (const info of optionCache.values()) info.retryAt = 0;
     const online = list.filter(machine => machine.online).length;
-    $('machine').textContent = t('Machines');
-    $('machine-detail').textContent = t('{online} / {total} online', { online, total: list.length });
+    const machineSummary = t('{online} / {total} online', { online, total: list.length });
+    $('machine-detail').textContent = machineSummary;
     $('machine-dot').classList.toggle('online', online > 0);
-    $('machine-dot').title = $('machine-detail').textContent;
+    $('machine-dot').title = machineSummary;
+    $('machines-top').dataset.online = online > 0 ? 'true' : 'false';
+    const badge = $('settings-machines-badge');
+    if (badge) {
+      badge.hidden = !list.length;
+      badge.textContent = `${online}/${list.length}`;
+      badge.dataset.online = online > 0 ? 'true' : 'false';
+    }
     if (redrawNav) drawNav();
     if (!quiet || discover) agentOptions(detect);
     if (redrawChrome || (redrawNav && !session)) drawChrome();
-    if (!quiet && $('machines-dialog').open) drawMachines();
+    if (!quiet && settingsDialog.open && settingsTab === 'machines') drawMachines();
     return online > 0;
   } catch (error) {
     if (revision !== refreshRequest || $('app').hidden) return false;
@@ -2387,13 +2428,19 @@ async function refresh(detect = false, quiet = false) {
     $('machine-dot').classList.remove('online');
     $('machine-detail').textContent = t('Disconnected');
     $('machine-dot').title = t('Lost connection to the machines');
+    $('machines-top').dataset.online = 'false';
+    if ($('settings-machines-badge')) $('settings-machines-badge').dataset.online = 'false';
     if (!disconnected) setError(error.message);
-    if ($('machines-dialog').open) drawMachines();
+    if (settingsDialog.open && settingsTab === 'machines') drawMachines();
     return false;
   } finally { if (revision === refreshRequest) refreshing = false; }
 }
 function drawMachines() {
   const platforms = { darwin: 'macOS', linux: 'Linux', win32: 'Windows' };
+  if (!machines.length) {
+    $('machine-list').replaceChildren(el('p', 'muted settings-empty', t('No machines configured yet.')));
+    return;
+  }
   $('machine-list').replaceChildren(...machines.map(machine => {
     const entry = el('section', 'machine-entry');
     const card = el('div', 'machine-card');
@@ -2413,10 +2460,13 @@ function drawMachines() {
     return entry;
   }));
 }
+const settingsDialog = $('settings-dialog');
+let settingsTab = 'general';
+const settingsTabTitles = { general: 'General', machines: 'Machines', shortcuts: 'Shortcuts' };
 const quotaResults = new Map();
 const quotaDialog = $('quota-dialog');
 let quotaTarget;
-let quotaBackToMachines = false;
+let quotaBackToSettings = false;
 let findingQuotaMachines = false;
 const supportsQuota = machine => machine.online && machine.quota;
 const quotaStates = { 'signed-out': t('Native account signed out'), external: t('Quota managed by the provider'),
@@ -2528,11 +2578,12 @@ async function findQuotaMachines(force = false) {
   }
 }
 function showQuota(machine) {
-  quotaBackToMachines = $('machines-dialog').open;
-  if (quotaBackToMachines) $('machines-dialog').close();
+  setShortcutHint(false);
+  quotaBackToSettings = settingsDialog.open;
+  if (quotaBackToSettings) settingsDialog.close();
   const close = $('quota-close');
-  close.setAttribute('aria-label', quotaBackToMachines ? t('Back to machines') : t('Close quota'));
-  close.replaceChildren(icon(quotaBackToMachines ? 'arrow-left' : 'x'));
+  close.setAttribute('aria-label', quotaBackToSettings ? t('Back to settings') : t('Close quota'));
+  close.replaceChildren(icon(quotaBackToSettings ? 'arrow-left' : 'x'));
   selectQuotaMachine(machine?.id ?? machineId);
   quotaDialog.showModal();
   if (quotaTarget) void loadQuota();
@@ -2548,7 +2599,7 @@ $('quota-machine').onchange = event => {
 $('quota-refresh').onclick = () => void (quotaTarget ? loadQuota(true) : findQuotaMachines(true));
 function closeQuota() {
   quotaDialog.close();
-  if (quotaBackToMachines) void showMachines();
+  if (quotaBackToSettings) void openSettings('machines');
 }
 $('quota-close').onclick = closeQuota;
 quotaDialog.addEventListener('cancel', event => { event.preventDefault(); closeQuota(); });
@@ -2557,7 +2608,7 @@ async function discoverMachines(detect = false) {
   const request = ++discoveryRequest;
   const result = await api('machines' + (detect ? '?refresh=1' : ''), undefined, primaryMachine, undefined, 15000);
   if (request === discoveryRequest) machines = sideFrame ? result.machines.filter(item => item.id === machineId) : result.machines;
-  if ($('machines-dialog').open) drawMachines();
+  if (settingsDialog.open && settingsTab === 'machines') drawMachines();
   return machines;
 }
 function drawMachineOptions(select, selected) {
@@ -2570,18 +2621,79 @@ function drawMachineOptions(select, selected) {
   select.replaceChildren(...options);
   select.value = selected;
 }
-async function showMachines() {
-  drawer(false);
-  drawMachines();
-  drawNotificationSettings();
-  $('machines-dialog').showModal();
-  $('machine-scan-result').textContent = t('Loading machines…');
-  try { await discoverMachines(); $('machine-scan-result').textContent = ''; }
-  catch (error) { $('machine-scan-result').textContent = error.message; }
+function drawShortcuts() {
+  const mod = appleKeys ? '⌘' : 'Ctrl';
+  const shift = appleKeys ? '⇧' : 'Shift';
+  const items = [
+    [t('Switch to pinned chat'), [mod, '1–9'], t('Hold {mod} to show numbers on pinned chats.', { mod })],
+    [t('Quick switch'), [mod, 'K']],
+    [t('New chat'), [mod, shift, 'O']],
+    [t('Toggle sidebar'), [mod, 'B']],
+    ...(appleKeys ? [[t('Pin or unpin chat'), ['⌥', '⌘', 'P']]] : []),
+    [t('Open settings'), [mod, ',']],
+    [t('Send message'), ['Enter']],
+  ];
+  $('shortcuts-list').replaceChildren(...items.map(([label, keys, note]) => {
+    const row = el('div', 'shortcut-row');
+    const copy = el('div', 'settings-copy');
+    copy.append(el('strong', '', label));
+    if (note) copy.append(el('small', '', note));
+    const combo = el('span', 'shortcut-keys');
+    for (const key of keys) combo.append(el('kbd', 'kbd', key));
+    row.append(copy, combo);
+    return row;
+  }));
 }
-$('machines-top').onclick = showMachines;
-if ($('machines-footer')) $('machines-footer').onclick = showMachines;
-$('close-machines').onclick = () => $('machines-dialog').close();
+function selectSettingsTab(tab = 'general') {
+  settingsTab = settingsTabTitles[tab] ? tab : 'general';
+  for (const button of settingsDialog.querySelectorAll('[data-settings-tab]')) {
+    const selected = button.dataset.settingsTab === settingsTab;
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  }
+  for (const name of Object.keys(settingsTabTitles)) {
+    const panel = $('panel-' + name);
+    if (panel) panel.hidden = name !== settingsTab;
+  }
+  $('settings-panel-title').textContent = t(settingsTabTitles[settingsTab]);
+  if (settingsTab === 'general') {
+    if ($('general-setting-status')) $('general-setting-status').textContent = '';
+    drawNotificationSettings();
+  } else if (settingsTab === 'machines') {
+    drawMachines();
+    $('machine-scan-result').textContent = t('Loading machines…');
+    void discoverMachines()
+      .then(() => { if (settingsDialog.open && settingsTab === 'machines') $('machine-scan-result').textContent = ''; })
+      .catch(error => { if (settingsDialog.open && settingsTab === 'machines') $('machine-scan-result').textContent = error.message; });
+  } else if (settingsTab === 'shortcuts') {
+    drawShortcuts();
+  }
+}
+async function openSettings(tab = 'general') {
+  setShortcutHint(false);
+  drawer(false);
+  if (!settingsDialog.open) settingsDialog.showModal();
+  selectSettingsTab(tab);
+}
+$('machines-top').onclick = () => void openSettings('machines');
+if ($('settings-footer')) $('settings-footer').onclick = () => void openSettings('general');
+$('close-settings').onclick = () => settingsDialog.close();
+if ($('close-settings-mobile')) $('close-settings-mobile').onclick = () => settingsDialog.close();
+settingsDialog.addEventListener('click', event => { if (event.target === settingsDialog) settingsDialog.close(); });
+for (const button of settingsDialog.querySelectorAll('[data-settings-tab]')) {
+  button.addEventListener('click', () => selectSettingsTab(button.dataset.settingsTab));
+}
+settingsDialog.querySelector('.settings-nav')?.addEventListener('keydown', event => {
+  if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  const tabs = [...settingsDialog.querySelectorAll('[data-settings-tab]')];
+  const index = tabs.indexOf(event.target.closest('[data-settings-tab]'));
+  if (index < 0) return;
+  event.preventDefault();
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+    : (index + (['ArrowDown', 'ArrowRight'].includes(event.key) ? 1 : -1) + tabs.length) % tabs.length;
+  selectSettingsTab(tabs[next].dataset.settingsTab);
+  tabs[next].focus();
+});
 $('language').replaceChildren(new Option(t('Automatic'), ''), ...languages.map(([id, name]) => new Option(name, id)));
 $('language').value = savedLanguage();
 $('language').onchange = () => setLanguage($('language').value);
@@ -3372,12 +3484,40 @@ mobile.addEventListener('change', () => { drawer(false); applyCollapse(); });
 /* Workspace shortcuts */
 if (appleKeys) $('pin-session').setAttribute('aria-keyshortcuts', 'Alt+Meta+P');
 if ($('quick-open')) {
-  $('quick-open').title = t('Quick switch ({key})', { key: appleKeys ? '⌘K' : 'Ctrl+K' });
+  const key = appleKeys ? '⌘K' : 'Ctrl+K';
+  $('quick-open').title = t('Quick switch ({key})', { key });
   $('quick-open').setAttribute('aria-keyshortcuts', appleKeys ? 'Meta+K' : 'Control+K');
+  if ($('quick-open-kbd')) $('quick-open-kbd').textContent = key;
+}
+if ($('settings-footer')) {
+  const key = appleKeys ? '⌘,' : 'Ctrl+,';
+  $('settings-footer').title = t('Settings ({key})', { key });
+  $('settings-footer').setAttribute('aria-keyshortcuts', appleKeys ? 'Meta+,' : 'Control+,');
+}
+const hasOnlyPrimaryMod = event => (appleKeys ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) && !event.altKey && !event.shiftKey;
+function setShortcutHint(active) {
+  const show = Boolean(active && !sideFrame && !$('app').hidden && !document.querySelector('dialog[open]') && pinnedSessionShortcuts.length);
+  $('app').classList.toggle('shortcut-hint', show);
 }
 document.addEventListener('keydown', event => {
-  if (!(appleKeys ? event.metaKey : event.ctrlKey) || event.defaultPrevented || event.isComposing) return;
-  if (sideFrame || $('app').hidden || $('folder-dialog').open || $('machines-dialog').open || quotaDialog.open || $('branches-dialog').open) return;
+  if (event.isComposing) return;
+  if (appleKeys ? event.key === 'Meta' : event.key === 'Control') {
+    setShortcutHint(hasOnlyPrimaryMod(event));
+    return;
+  }
+  if ($('app').classList.contains('shortcut-hint') && !hasOnlyPrimaryMod(event)) setShortcutHint(false);
+  if (!(appleKeys ? event.metaKey : event.ctrlKey) || event.defaultPrevented) return;
+  if (sideFrame || $('app').hidden || $('folder-dialog').open || quotaDialog.open || $('branches-dialog').open) return;
+  if (event.code === 'Comma' && !event.shiftKey && !event.altKey && !(appleKeys ? event.ctrlKey : event.metaKey)) {
+    if ($('quick-dialog')?.open || $('rename-dialog').open || $('schedule-dialog').open || $('pair-machine-dialog').open) return;
+    event.preventDefault();
+    if (!event.repeat) {
+      if (settingsDialog.open) settingsDialog.close();
+      else void openSettings('general');
+    }
+    return;
+  }
+  if (settingsDialog.open) return;
   if (event.altKey) {
     const pin = $('pin-session');
     if (!appleKeys || event.code !== 'KeyP' || event.ctrlKey || event.shiftKey || pin.hidden || document.querySelector('dialog[open]')) return;
@@ -3390,10 +3530,26 @@ document.addEventListener('keydown', event => {
     if (!event.repeat) openQuickSwitch();
     return;
   }
-  if ($('quick-dialog')?.open) return;
+  if ($('quick-dialog')?.open || document.querySelector('dialog[open]')) return;
+  const digit = hasOnlyPrimaryMod(event) && /^Digit([1-9])$/.exec(event.code);
+  if (digit) {
+    const target = pinnedSessionShortcuts[Number(digit[1]) - 1];
+    if (target) {
+      event.preventDefault();
+      if (!event.repeat) void openSession(target.id, { target: target.machine }).catch(error => setError(error.message));
+      return;
+    }
+  }
   if (event.code === 'KeyB' && !event.shiftKey) { event.preventDefault(); toggleSidebar(); }
   else if (event.code === 'KeyO' && event.shiftKey) { event.preventDefault(); $('new-chat').click(); }
 });
+document.addEventListener('keyup', event => {
+  if ((appleKeys ? event.key === 'Meta' || !event.metaKey : event.key === 'Control' || !event.ctrlKey) || !hasOnlyPrimaryMod(event)) {
+    setShortcutHint(false);
+  }
+});
+window.addEventListener('blur', () => setShortcutHint(false));
+window.addEventListener('contextmenu', () => setShortcutHint(false));
 /* Sidebar arrow-key navigation: ↑/↓/Home/End move between rows, ←/→ collapse/expand. */
 $('nav').addEventListener('keydown', event => {
   const { key, target } = event;
@@ -3447,7 +3603,7 @@ document.addEventListener('click', event => {
   if (menuFor && !event.target.closest('.menu, .more')) { menuFor = ''; drawNav(); }
 });
 document.addEventListener('keydown', event => {
-  if (event.defaultPrevented || event.key !== 'Escape' || imagePreview.open || $('folder-dialog').open || $('machines-dialog').open || quotaDialog.open || $('quick-dialog')?.open) return;
+  if (event.defaultPrevented || event.key !== 'Escape' || imagePreview.open || $('folder-dialog').open || settingsDialog.open || quotaDialog.open || $('quick-dialog')?.open) return;
   if (menuFor) {
     const key = menuFor;
     menuFor = '';
@@ -3458,9 +3614,10 @@ document.addEventListener('keydown', event => {
 });
 document.addEventListener('visibilitychange', () => {
   setConnectionProblem('offline', !navigator.onLine);
+  if (document.hidden) setShortcutHint(false);
   if (document.visibilityState === 'visible' && !$('app').hidden) {
     if (markOpenResultRead()) drawNav();
-    if ($('machines-dialog').open) drawNotificationSettings();
+    if (settingsDialog.open && settingsTab === 'general') drawNotificationSettings();
     void refresh();
   }
 });

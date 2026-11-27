@@ -41,13 +41,13 @@
       <div class="side-actions">
         <button id="new-chat" class="side-action" type="button" aria-label="New chat" title="New chat (Ctrl/⌘ + Shift + O)"><span data-icon="compose"></span><span>New chat</span></button>
         <button id="new-project" class="side-action" type="button" aria-label="New project" title="New project" aria-haspopup="dialog"><span data-icon="folder-plus"></span><span>New project</span></button>
-        <button id="quick-open" class="side-action" type="button" aria-label="Quick switch" aria-haspopup="dialog" hidden><span data-icon="search"></span><span>Quick switch</span></button>
+        <button id="quick-open" class="side-action" type="button" aria-label="Quick switch" aria-haspopup="dialog" hidden><span data-icon="search"></span><span>Quick switch</span><kbd id="quick-open-kbd" class="side-kbd" aria-hidden="true"></kbd></button>
       </div>
       <nav id="nav" class="nav" aria-label="Projects and chats"></nav>
       <div class="machine">
-        <button id="machines-footer" class="machine-status-button" type="button" aria-haspopup="dialog" aria-label="Show machine status">
-          <span id="machine-dot" class="dot" aria-hidden="true"></span>
-          <span class="machine-text"><strong id="machine">Machines</strong><small id="machine-detail">Connecting</small></span>
+        <button id="settings-footer" class="machine-status-button" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" aria-label="Settings">
+          <span class="settings-footer-icon" aria-hidden="true"><span data-icon="settings"></span><span id="machine-dot" class="dot"></span></span>
+          <span class="machine-text"><strong id="settings-label">Settings</strong><small id="machine-detail">Connecting</small></span>
         </button>
         <button id="quota-footer" class="btn quota-shortcut" type="button" aria-haspopup="dialog" aria-controls="quota-dialog" aria-label="Show account quota" title="Show account quota">
           <span data-icon="gauge"></span><span>Quota</span>
@@ -236,28 +236,68 @@
         aria-expanded="false" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="Search projects, chats, or machines" autofocus>
       <div id="quick-results" class="quick-results" role="listbox" aria-label="Projects and chats"></div>
       <p id="quick-empty" class="quick-empty" role="status" hidden></p>
+      <div class="quick-foot" aria-hidden="true">
+        <span><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd><span>Navigate</span></span>
+        <span><kbd class="kbd">↵</kbd><span>Open</span></span>
+        <span><kbd class="kbd">Esc</kbd><span>Close</span></span>
+      </div>
     </div>
   </dialog>
 
-  <dialog id="machines-dialog" aria-labelledby="machines-title">
-    <div class="dialog-content">
-      <div class="dialog-title">
-        <h2 id="machines-title">Machines</h2>
-        <button id="close-machines" class="icon-btn" type="button" aria-label="Close machines"><span data-icon="x"></span></button>
-      </div>
-      <div id="machine-list" class="machine-list" aria-label="Available machines"></div>
-      <div class="notification-setting">
-        <div><strong>Notify when a turn ends</strong><small id="notification-status" aria-live="polite"></small></div>
-        <button id="notification-toggle" class="btn" type="button">Turn on notifications</button>
-      </div>
-      <div class="notification-setting">
-        <label for="language"><strong>Language</strong></label>
-        <select id="language" data-select-label="Language"></select>
-      </div>
-      <div class="dialog-footer">
-        <p id="machine-scan-result" class="machine-scan-result" role="status"></p>
-        <button id="scan-machines" class="btn" type="button"><span data-icon="refresh"></span><span>Rediscover</span></button>
-        <button id="add-machine" class="btn primary" type="button" hidden>Add machine</button>
+  <dialog id="settings-dialog" aria-labelledby="settings-title">
+    <div class="settings-shell">
+      <aside class="settings-sidebar">
+        <div class="settings-head">
+          <h2 id="settings-title">Settings</h2>
+          <button id="close-settings-mobile" class="icon-btn settings-close-mobile" type="button" aria-label="Close settings"><span data-icon="x"></span></button>
+        </div>
+        <div class="settings-nav" role="tablist" aria-label="Settings sections">
+          <button id="tab-general" class="settings-tab" type="button" role="tab" data-settings-tab="general" aria-controls="panel-general" aria-selected="true">
+            <span data-icon="sliders"></span><span>General</span>
+          </button>
+          <button id="tab-machines" class="settings-tab" type="button" role="tab" data-settings-tab="machines" aria-controls="panel-machines" aria-selected="false">
+            <span data-icon="device"></span><span>Machines</span><span id="settings-machines-badge" class="settings-badge" hidden></span>
+          </button>
+          <button id="tab-shortcuts" class="settings-tab" type="button" role="tab" data-settings-tab="shortcuts" aria-controls="panel-shortcuts" aria-selected="false">
+            <span data-icon="keyboard"></span><span>Shortcuts</span>
+          </button>
+        </div>
+      </aside>
+      <div class="settings-main">
+        <div class="dialog-title settings-panel-head">
+          <h3 id="settings-panel-title">General</h3>
+          <button id="close-settings" class="icon-btn" type="button" aria-label="Close settings"><span data-icon="x"></span></button>
+        </div>
+        <section id="panel-general" class="settings-panel" role="tabpanel" aria-labelledby="tab-general">
+          <div class="settings-group">
+            <div class="settings-row">
+              <div class="settings-copy">
+                <label for="language"><strong>Language</strong></label>
+                <small>Choose the display language for Ferry.</small>
+              </div>
+              <select id="language" data-select-label="Language"></select>
+            </div>
+            <div class="settings-row">
+              <div class="settings-copy">
+                <strong>Notify when a turn ends</strong>
+                <small id="notification-status" aria-live="polite"></small>
+              </div>
+              <button id="notification-toggle" class="btn" type="button">Turn on notifications</button>
+            </div>
+          </div>
+          <p id="general-setting-status" class="machine-scan-result" role="status"></p>
+        </section>
+        <section id="panel-machines" class="settings-panel" role="tabpanel" aria-labelledby="tab-machines" hidden>
+          <div id="machine-list" class="machine-list" aria-label="Available machines"></div>
+          <div class="dialog-footer settings-machines-footer">
+            <p id="machine-scan-result" class="machine-scan-result" role="status"></p>
+            <button id="scan-machines" class="btn" type="button"><span data-icon="refresh"></span><span>Rediscover</span></button>
+            <button id="add-machine" class="btn primary" type="button" hidden>Add machine</button>
+          </div>
+        </section>
+        <section id="panel-shortcuts" class="settings-panel" role="tabpanel" aria-labelledby="tab-shortcuts" hidden>
+          <div id="shortcuts-list" class="shortcuts-list"></div>
+        </section>
       </div>
     </div>
   </dialog>
