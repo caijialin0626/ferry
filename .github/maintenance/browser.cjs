@@ -122,7 +122,11 @@ else process.exit(2);`, { mode: 0o700 });
     await page.locator('.markdown').getByText('Read MP4: 24 bytes, 1 images.').waitFor();
     await page.reload();
     await page.locator('#messages video').waitFor();
-    await page.locator('#file').setInputFiles([
+    const filesChosen = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Add attachments', exact: true }).click();
+    const filePicker = await filesChosen;
+    if (!filePicker.isMultiple()) throw new Error('Attachment picker should allow multiple files');
+    await filePicker.setFiles([
       { name: 'archive.zip', mimeType: 'application/zip', buffer: Buffer.from('504b0506' + '00'.repeat(18), 'hex') },
       { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') },
     ]);
