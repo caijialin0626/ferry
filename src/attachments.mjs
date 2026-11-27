@@ -46,7 +46,7 @@ export async function readReplyImage(path) {
 
 export function addAttachment(connection, session, message, image, position, ignoreDuplicate = false) {
   return connection.query(`INSERT INTO attachments(id,session,message,name,media_type,content,position)
-    VALUES ($1,$2,$3,$4,$5,$6,$7)${ignoreDuplicate ? ' ON CONFLICT (id) DO NOTHING' : ''}`,
+    VALUES ($1,$2,$3,$4,$5,COALESCE($6,zeroblob(0)),$7)${ignoreDuplicate ? ' ON CONFLICT (id) DO NOTHING' : ''}`,
   [image.id, session, message, image.name, image.mediaType, image.content, position]);
 }
 
@@ -94,6 +94,27 @@ export function readImages(value = []) {
     }
     const name = typeof image.name === 'string' && image.name.trim() ? image.name.replace(/[\x00-\x1f/\\]/g, '').trim().slice(0, 120) : '';
     return { name: name || 'image.' + format.extension, mediaType: image.mediaType, extension: format.extension, content };
+  });
+}
+
+export const fileMediaType = 'application/octet-stream';
+
+export function readFiles(items, videoBytes = 0) {
+  if (items === undefined) return [];
+  if (!Array.isArray(items) || items.length > 6) throw new HttpError(400, 'Attach up to 6 files per message.');
+  let remaining = videoLimit - videoBytes;
+  return items.map(item => {
+    if (typeof item?.name !== 'string' || typeof item.data !== 'string' ||
+        item.data.length > Math.ceil(remaining / 3) * 4) throw new HttpError(400, 'Invalid file or files exceed 8 MiB.');
+    const content = Buffer.from(item.data, 'base64');
+    if (content.length > remaining || content.toString('base64') !== item.data) throw new HttpError(400, 'Invalid file or files exceed 8 MiB.');
+    remaining -= content.length;
+    const leaf = item.name.split(/[\\/]/).pop().toWellFormed().replace(/[\x00-\x1f\x7f<>:"|?*]/g, '_');
+    const name = [...leaf].slice(0, 120).join('').replace(/[. ]+$/, '');
+    if (!name || Buffer.byteLength(name) > 240 || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(name)) {
+      throw new HttpError(400, 'Choose a valid filename.');
+    }
+    return { name, mediaType: fileMediaType, content };
   });
 }
 

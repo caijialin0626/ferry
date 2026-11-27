@@ -685,6 +685,23 @@ require('node:readline').createInterface({input:process.stdin}).on('line',raw=>{
   const prefix = await raw(savedVideo.url, undefined, { cookie, headers: { Range: 'bytes=0-23' } });
   assert.equal(prefix.status, 206);
   assert.deepEqual(Buffer.from(await prefix.arrayBuffer()), clip.subarray(0, 24));
+  assert.equal(initial.machine.fileInput, true);
+  const docUrl = 'sessions/' + (await call('sessions', { project: null, agent: 'agy' }, 201)).id;
+  const documents = { id: randomUUID(), text: '', files: [
+    { name: '../归档.zip', data: 'UEsDBA==' }, { name: 'notes.txt', data: 'aGVsbG8=' }, { name: 'empty', data: '' },
+  ] };
+  await call(docUrl + '/send', { ...documents, files: Array(7).fill(documents.files[0]) }, 400);
+  await call(docUrl + '/send', { ...documents, video }, 400);
+  await Promise.all([call(docUrl + '/send', documents, 202), call(docUrl + '/send', documents, 202)]);
+  await call(docUrl + '/send', { ...documents, files: [{ name: 'other.zip', data: 'UEsDBA==' }] }, 409);
+  const docHistory = await finished(docUrl);
+  assert.equal(docHistory.messages.at(-1).text, 'File bytes: 4, 5, 0');
+  const savedFiles = docHistory.messages.find(m => m.role === 'user').images;
+  assert.deepEqual(savedFiles.map(file => file.name), ['归档.zip', 'notes.txt', 'empty']);
+  const docDownload = await raw(savedFiles[0].url, undefined, { cookie });
+  assert.equal(docDownload.headers.get('content-type'), 'application/octet-stream');
+  assert.match(docDownload.headers.get('content-disposition'), /attachment; filename\*=UTF-8''%E5%BD%92%E6%A1%A3.zip/);
+  assert.equal(Buffer.from(await docDownload.arrayBuffer()).toString('base64'), 'UEsDBA==');
   const native = async text => {
     await call(agyUrl + '/send', { id: randomUUID(), text, model:'gemini-fixture-high' }, 202);
     const result = await finished(agyUrl);

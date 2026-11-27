@@ -2,14 +2,14 @@ import { createServer } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { createReadStream, mkdirSync } from 'node:fs';
-import { open, realpath, stat, readdir, unlink } from 'node:fs/promises';
+import { open, realpath, stat, readdir, unlink, mkdir, rm } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { pipeline } from 'node:stream/promises';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import { homedir, hostname } from 'node:os';
 import { one, openDatabase, withTransaction } from './db.mjs';
 import { adapters, agentOptions, discoverAgents } from './agents.mjs';
-import { addAttachment, readImages, readLinkedReplyImage, readReplyImage, readVideo, videoExtensions } from './attachments.mjs';
+import { addAttachment, fileMediaType, readFiles, readImages, readLinkedReplyImage, readReplyImage, readVideo, videoExtensions } from './attachments.mjs';
 import { userAnswers } from './questions.mjs';
 import { HttpError, body, failure, json, maxImages, sameSecret, secret, sendLimit, sse } from './common.mjs';
 import { hostData as data, openPairing } from './pairing.mjs';
@@ -22,6 +22,7 @@ const bind = process.env.FERRY_HOST_BIND || '127.0.0.1';
 const port = Number(process.env.FERRY_HOST_PORT || 8788);
 const home = await realpath(homedir());
 const recentWorkspace = join(data, 'independent');
+const fileDirectory = resolve(data, 'file-attachments');
 const videoDirectory = resolve(data, 'video-attachments');
 mkdirSync(data, { recursive: true, mode: 0o700 });
 // Different listen ports can still point at the same chat history and scheduler.
@@ -476,7 +477,7 @@ function optionalChoice(value, pattern) {
 }
 
 function machineIdentity() {
-  return { name: hostname(), platform: process.platform, videoInput: true, scheduling: true, sessionRenaming: true,
+  return { name: hostname(), platform: process.platform, fileInput: true, videoInput: true, scheduling: true, sessionRenaming: true,
     sessionBranches: true, quota: true, maxImages };
 }
 
@@ -532,6 +533,7 @@ async function createBranch(source, id, kind) {
 const activeTasks = new Set();
 const server = createServer(async (req, res) => {
   let temporaryVideo;
+  const temporaryDirs = [];
   try {
     await recovered;
     const { pathname, searchParams } = new URL(req.url, 'http://localhost');
@@ -625,8 +627,12 @@ const server = createServer(async (req, res) => {
     }
     const attachmentRoute = pathname.match(/^\/api\/attachments\/([a-f0-9-]{36})$/);
     if (req.method === 'GET' && attachmentRoute) {
-      const image = await one(db, 'SELECT media_type,content FROM attachments WHERE id=$1', [attachmentRoute[1]]);
+      const image = await one(db, 'SELECT name,media_type,content FROM attachments WHERE id=$1', [attachmentRoute[1]]);
       if (!image) throw new HttpError(404, 'Attachment not found.');
+      if (image.media_type === fileMediaType) {
+        const filename = encodeURIComponent(image.name).replace(/['()*]/g, char => '%' + char.charCodeAt(0).toString(16));
+        res.setHeader('content-disposition', "attachment; filename*=UTF-8''" + filename);
+      }
       if (videoExtensions.has(image.media_type)) return await serveVideo(req, res, attachmentRoute[1], image.media_type);
       res.writeHead(200, { 'content-type': image.media_type, 'content-length': image.content.length,
         'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' });
@@ -738,11 +744,12 @@ const server = createServer(async (req, res) => {
       }
       const images = readImages(input.images);
       const video = readVideo(input.video);
+      const files = readFiles(input.files, video?.content.length);
       if (video && adapters.get(session.agent)?.videoInput === false) {
         throw new HttpError(400, 'This agent CLI does not accept videos.');
       }
       if (typeof input.id !== 'string' || !/^[a-zA-Z0-9-]{20,80}$/.test(input.id) ||
-          typeof input.text !== 'string' || input.text.length > 32000 || (!input.text.trim() && !images.length && !video)) {
+          typeof input.text !== 'string' || input.text.length > 32000 || (!input.text.trim() && !images.length && !video && !files.length)) {
         throw new HttpError(400, 'Enter a message or add images or a video.');
       }
       const model = optionalChoice(input.model, /^[a-zA-Z0-9][a-zA-Z0-9_.:/\[\]-]{0,91}$/);
@@ -753,9 +760,10 @@ const server = createServer(async (req, res) => {
       }
       const key = createHash('sha256').update(JSON.stringify([input.text, model, effort, images.map(image =>
         [image.name, image.mediaType, image.content.toString('base64')]), ...(steer && !receipt ? [steer] : []),
+        ...(files.length ? [{ files: files.map(file => [file.name, createHash('sha256').update(file.content).digest('hex')]) }] : []),
         ...(video ? [[video.name, video.mediaType, createHash('sha256').update(video.content).digest('hex')]] : [])])).digest('hex');
       function verifyPrevious(previous) {
-        if (previous && (previous.request_key ? previous.request_key !== key : previous.text !== input.text || images.length || video)) {
+        if (previous && (previous.request_key ? previous.request_key !== key : previous.text !== input.text || images.length || video || files.length)) {
           throw new HttpError(409, 'The same request cannot submit a different message.');
         }
         return Boolean(previous);
@@ -774,6 +782,17 @@ const server = createServer(async (req, res) => {
         // Give the CLI a local path so its file tools can open the original video.
         prompt += (prompt ? '\n\n' : '') + 'Attached video: ' + JSON.stringify(path);
       }
+      if (files.length) await mkdir(fileDirectory, { recursive: true, mode: 0o700 });
+      for (const file of files) {
+        file.id = randomUUID();
+        const directory = join(fileDirectory, file.id);
+        await mkdir(directory, { mode: 0o700 });
+        temporaryDirs.push(directory);
+        const path = join(directory, file.name);
+        const handle = await open(path, 'wx', 0o600);
+        try { await handle.writeFile(file.content); } finally { await handle.close(); }
+        prompt += (prompt ? '\n\n' : '') + 'Attached file: ' + JSON.stringify(path);
+      }
       async function checkArchive(client, current) {
         const selectedProject = await one(client, 'SELECT archived FROM projects WHERE id=$1', [current.project]);
         if (current.archived || selectedProject.archived) throw new HttpError(409, 'Restore it from the archive to keep sending.');
@@ -783,6 +802,7 @@ const server = createServer(async (req, res) => {
         const message = input.id + '-user';
         const attachments = images.map(image => ({ ...image, id: randomUUID() }));
         if (video) attachments.push({ ...video, content: Buffer.alloc(0) });
+        attachments.push(...files);
         await addMessage(client, id, message, role, input.text, attachments.map(image =>
           imageMetadata({ id: image.id, name: image.name, media_type: image.mediaType })), offset, createdAt);
         if (receipt) await addMessage(client, id, input.id + '-answer', 'answer', receipt);
@@ -808,6 +828,7 @@ const server = createServer(async (req, res) => {
             await saveInput(client, 'steer', offset, createdAt);
           });
           temporaryVideo = undefined;
+          temporaryDirs.length = 0;
           publish(id);
         });
         return json(res, 202, { id: input.id });
@@ -820,7 +841,7 @@ const server = createServer(async (req, res) => {
         await checkArchive(client, current);
         if (running.has(id) || ['running', 'stopping'].includes(current.state)) throw new HttpError(409, 'This chat is still running.');
         const options = { model: model ?? current.model, effort: effort ?? current.effort };
-        const title = input.text.trim().split('\n')[0].slice(0, 60) || (images[0] ?? video).name;
+        const title = input.text.trim().split('\n')[0].slice(0, 60) || (images[0] ?? video ?? files[0]).name;
         await client.query("UPDATE sessions SET model=$1,effort=$2,title=CASE WHEN title='' AND custom_title=0 THEN $3 ELSE title END WHERE id=$4",
           [options.model, options.effort, title, id]);
         await saveInput(client, 'user');
@@ -829,6 +850,7 @@ const server = createServer(async (req, res) => {
       });
       if (update) {
         temporaryVideo = undefined;
+        temporaryDirs.length = 0;
         const run = { command: input.id, controller: new AbortController() };
         running.set(id, run);
         publish(id);
@@ -855,6 +877,7 @@ const server = createServer(async (req, res) => {
   } catch (error) {
     failure(res, error);
   } finally {
+    for (const path of temporaryDirs) await rm(path, { recursive: true, force: true }).catch(() => {});
     if (temporaryVideo) await unlink(temporaryVideo).catch(() => {});
   }
 });

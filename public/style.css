@@ -816,6 +816,9 @@ body > .connection-status { position: fixed; z-index: 50; top: max(10px, env(saf
   position: relative; width: 68px; height: 68px; border-radius: var(--r-md); overflow: hidden;
   border: 1px solid var(--line); background: var(--sunken); box-shadow: var(--shadow-xs);
 }
+.attachment-file { width: auto; height: auto; min-height: 32px; max-width: 100%; padding: 6px 32px 6px 10px; }
+.attachment-file span, .user-file { overflow-wrap: anywhere; }
+.user-file { padding: 5px 10px; border: 1px solid var(--line); border-radius: var(--r-md); color: var(--accent); }
 .attachment img, .attachment video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .attachment-image-trigger { display: block; width: 100%; height: 100%; border: 0; background: transparent; }
 .attachment-image-trigger:focus-visible { outline-offset: -3px; }
