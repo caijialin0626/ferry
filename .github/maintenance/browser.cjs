@@ -102,7 +102,7 @@ else process.exit(2);`, { mode: 0o700 });
     const inventory = await (await page.request.get(url + '/api/overview')).json();
     const agy = inventory.agents.find(agent => agent.id === 'agy');
     const videoEnabled = inventory.machine.videoInput && agy.videoInput !== false;
-    const expectedTypes = videoEnabled ? 'image/*,video/mp4,.mp4,video/quicktime,.mov,video/webm,.webm' : 'image/*';
+    const expectedTypes = inventory.machine.fileInput ? '' : videoEnabled ? 'image/*,video/mp4,.mp4,video/quicktime,.mov,video/webm,.webm' : 'image/*';
     if (await page.locator('#file').getAttribute('accept') !== expectedTypes) throw new Error('Antigravity picker disagrees with the host');
     const chooser = page.waitForEvent('filechooser');
     await page.locator('#attach').click();
