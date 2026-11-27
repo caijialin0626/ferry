@@ -122,7 +122,13 @@ else process.exit(2);`, { mode: 0o700 });
     await page.locator('.markdown').getByText('Read MP4: 24 bytes, 1 images.').waitFor();
     await page.reload();
     await page.locator('#messages video').waitFor();
-    await page.locator('#file').setInputFiles([
+    await page.setViewportSize({ width: 390, height: 844 });
+    const [filePicker] = await Promise.all([
+      page.waitForEvent('filechooser'),
+      page.getByRole('button', { name: /^(Add attachments|添加附件)$/ }).click(),
+    ]);
+    if (!filePicker.isMultiple()) throw new Error('Attachment picker should allow multiple files');
+    await filePicker.setFiles([
       { name: 'archive.zip', mimeType: 'application/zip', buffer: Buffer.from('504b0506' + '00'.repeat(18), 'hex') },
       { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') },
     ]);
@@ -145,6 +151,7 @@ else process.exit(2);`, { mode: 0o700 });
     await page.locator('.markdown').getByText('File bytes: 22, 5').waitFor();
     await page.reload();
     await page.getByRole('link', { name: 'archive.zip', exact: true }).waitFor();
+    await page.setViewportSize({ width: 1280, height: 720 });
     // Older hosts only know when output began, even if more text followed a steer.
     await page.route(historyUrl, route => route.fulfill({ json: { ...snapshot, messages: [
       { ...agent, text: 'First. Second.', updated_at: null },

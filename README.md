@@ -45,6 +45,7 @@ In this sample Field Notes project, the sidebar lists projects and chats alongsi
 </details>
 
 - **Steer a live session.** Follow replies and tool calls, add guidance mid-turn, or answer the agent’s questions. Reconnecting replays the events you missed.
+- **Attach files.** Click the paperclip or drop files into the composer to send images, videos, ZIP archives, and other files to Codex, Claude Code, or Antigravity.
 - **Switch machines.** Pair another host with a one-time code and pick its projects from the sidebar. Each host uses its own models, skills, and MCP configuration.
 - **Explore a side question.** Fork a conversation or open a read-only side chat while the main task runs.
 

@@ -38,7 +38,7 @@ const ICONS = {
   chat: 'M6.5 5h11A2.5 2.5 0 0 1 20 7.5v6a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 3.5V16A2.5 2.5 0 0 1 4 13.5v-6A2.5 2.5 0 0 1 6.5 5z',
   logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10',
   up: 'M12 19V7M7 12l5-5 5 5',
-  image: 'M4 5h16v14H4zM4 16l4.5-4.5 3.5 3.5 2.5-2.5L20 17M15.5 9.5h.01',
+  paperclip: 'M8 13.5l6.8-6.8a2 2 0 0 1 2.8 2.8l-8 8a4 4 0 0 1-5.7-5.7l8.5-8.5a5.5 5.5 0 0 1 7.8 7.8l-8.7 8.7',
   search: 'M15.8 15.8 20 20M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0Z',
 };
 function icon(name) {
@@ -1392,7 +1392,6 @@ function updateAttachButton() {
   $('attach').disabled = attachmentDraftLoading || blocked() || (!images && !video && !acceptsFiles());
   $('attach').title = acceptsFiles() ? t('Attach images, video, or files') : !video ? t('Add images (up to {n} per message)', { n: limit }) : images ?
     t('Add images or a video (up to {n} images, video ≤ 8 MiB)', { n: limit }) : t('Add a video (≤ 8 MiB)');
-  $('attach').setAttribute('aria-label', $('attach').title);
 }
 function addMedia(files) {
   if (attachmentDraftLoading || blocked()) return;
