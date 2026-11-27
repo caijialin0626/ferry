@@ -343,7 +343,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',raw=>{
   const initial = await call('overview');
   assert.equal(initial.machine.name, hostname());
   assert.deepEqual(initial.agents.map(a => a.available), [false, true, true]);
-  assert.equal(initial.agents.find(a => a.id === 'agy').videoInput, false);
+  const agyAcceptsVideo = initial.machine.videoInput && initial.agents.find(a => a.id === 'agy').videoInput !== false;
   const agyModels = (await call('agents/agy/options')).models;
   assert.equal(agyModels[1].id, 'gemini-fixture-high');
   assert.ok(agyModels.every(model => model.imageInput));
@@ -672,6 +672,18 @@ require('node:readline').createInterface({input:process.stdin}).on('line',raw=>{
   await finished(independentUrl);
   const antigravity = await call('sessions', { project: null, agent: 'agy' }, 201);
   const agyUrl = 'sessions/' + antigravity.id;
+  const videoChat = await call('sessions', { project: null, agent: 'agy' }, 201);
+  const videoChatUrl = 'sessions/' + videoChat.id;
+  const clipRequest = { id: randomUUID(), text: '', video };
+  if (agyAcceptsVideo) {
+    await call(videoChatUrl + '/send', clipRequest, 202);
+    const snapshot = await finished(videoChatUrl);
+    assert.equal(snapshot.session.state, 'idle');
+    assert.equal(snapshot.messages.find(message => message.role === 'user').images[0].name, video.name);
+  } else {
+    await call(videoChatUrl + '/send', clipRequest, 400);
+    assert.deepEqual((await call(videoChatUrl)).messages, []);
+  }
   const native = async text => {
     await call(agyUrl + '/send', { id: randomUUID(), text, model:'gemini-fixture-high' }, 202);
     const result = await finished(agyUrl);
