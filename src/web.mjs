@@ -221,7 +221,7 @@ const server = createServer(async (req, res) => {
       const send = /^\/api\/sessions\/[^/]+\/send$/.test(path);
       const input = req.method === 'POST' ? await body(req, send ? sendLimit : undefined) : undefined;
       const payload = input && JSON.stringify(input);
-      timer = setTimeout(abort, send && input?.video ? 300000 : 15000);
+      timer = setTimeout(abort, send && (input?.video || input?.files?.length) ? 300000 : 15000);
       upstream = await fetch(new URL(path + url.search, target.url), {
         method: req.method,
         headers: {
@@ -240,7 +240,7 @@ const server = createServer(async (req, res) => {
     }
     const type = upstream.headers.get('content-type') || 'application/json';
     const headers = { 'content-type': type, 'cache-control': 'no-store', 'x-accel-buffering': 'no' };
-    for (const name of ['content-range', 'accept-ranges', 'content-length']) {
+    for (const name of ['content-range', 'accept-ranges', 'content-length', 'content-disposition', 'x-content-type-options']) {
       if (upstream.headers.has(name)) headers[name] = upstream.headers.get(name);
     }
     res.writeHead(upstream.status, headers);

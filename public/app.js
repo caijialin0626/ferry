@@ -1276,7 +1276,27 @@ function openAttachmentDatabase() {
   }).catch(() => null);
 }
 
-async function draftFiles(key, change) {
+const draftOperations = new Map();
+function draftFiles(key, change) {
+  // Keep a later removal or send behind any file still being copied into the draft.
+  const previous = draftOperations.get(key) ?? Promise.resolve();
+  const task = previous.then(async () => {
+    if (Array.isArray(change)) {
+      const records = await Promise.all(change.map(async record => {
+        if (!isFile(record)) return record;
+        return { ...record, file: await record.file.arrayBuffer() };
+      }));
+      return accessDraftFiles(key, () => records);
+    }
+    return accessDraftFiles(key, change);
+  });
+  const settled = task.catch(() => {});
+  draftOperations.set(key, settled);
+  void settled.then(() => { if (draftOperations.get(key) === settled) draftOperations.delete(key); });
+  return task;
+}
+
+async function accessDraftFiles(key, change) {
   if (!key) return [];
   let next;
   try {
@@ -1315,7 +1335,7 @@ function restoreDraftAttachments(key, previous) {
   if (previous) {
     const moved = attachmentRecords();
     if (moved.length) {
-      void draftFiles(key, () => moved);
+      void draftFiles(key, moved);
       void deleteDraftFiles(previous, new Set(moved.map(item => item.key)));
     }
     return;
@@ -1324,7 +1344,10 @@ function restoreDraftAttachments(key, previous) {
   attachmentDraftLoading = true;
   void draftFiles(key).then(files => {
     if (revision !== attachmentDraftRevision || draftKey !== key) return;
-    attachments = files.map(file => ({ ...file, url: URL.createObjectURL(file.file) }));
+    attachments = files.map(record => {
+      const file = record.file instanceof ArrayBuffer ? new Blob([record.file], { type: record.mediaType }) : record.file;
+      return { ...record, file, url: URL.createObjectURL(file) };
+    });
     attachmentDraftLoading = false;
     drawAttachments();
     drawState();
@@ -1350,6 +1373,9 @@ function acceptsVideo() {
   return agent?.mediaInput !== false && agent?.videoInput !== false && inventories.get(machineId)?.machine.videoInput === true;
 }
 const imageCountLimit = () => inventories.get(machineId)?.machine.maxImages ?? 3;
+const acceptsFiles = () => inventories.get(machineId)?.machine.fileInput === true;
+const isImage = item => item.mediaType?.startsWith('image/');
+const isFile = item => !isImage(item) && !isVideo(item);
 const isVideo = item => item.mediaType?.startsWith('video/');
 function acceptsImages() {
   const info = optionCache.get(resourceKey(machineId, $('agent').value));
@@ -1358,13 +1384,13 @@ function acceptsImages() {
 }
 function updateAttachButton() {
   const limit = imageCountLimit();
-  const images = acceptsImages() && attachments.filter(item => !isVideo(item)).length < limit;
+  const images = acceptsImages() && attachments.filter(isImage).length < limit;
   const video = acceptsVideo() && !attachments.some(isVideo);
   const types = images ? ['image/*'] : [];
   if (video) for (const [ext, mime] of VIDEO_TYPES) types.push(mime, '.' + ext);
-  $('file').accept = types.join(',');
-  $('attach').disabled = attachmentDraftLoading || blocked() || (!images && !video);
-  $('attach').title = !video ? t('Add images (up to {n} per message)', { n: limit }) : images ?
+  $('file').accept = acceptsFiles() ? '' : types.join(',');
+  $('attach').disabled = attachmentDraftLoading || blocked() || (!images && !video && !acceptsFiles());
+  $('attach').title = acceptsFiles() ? t('Attach images, video, or files') : !video ? t('Add images (up to {n} per message)', { n: limit }) : images ?
     t('Add images or a video (up to {n} images, video ≤ 8 MiB)', { n: limit }) : t('Add a video (≤ 8 MiB)');
   $('attach').setAttribute('aria-label', $('attach').title);
 }
@@ -1374,18 +1400,24 @@ function addMedia(files) {
   const count = attachments.length;
   const limit = imageCountLimit();
   for (const file of files) {
-    const type = mediaType(file);
+    let type = mediaType(file) || 'application/octet-stream';
+    if (acceptsFiles() && type.startsWith('video/') && ![...VIDEO_TYPES.values()].includes(type)) type = 'application/octet-stream';
+    if (!type.startsWith('image/') && attachments.filter(item => !isImage(item)).reduce((sum, item) => sum + item.file.size, file.size) > VIDEO_MAX) {
+      problems.push(t('Files and video must total 8 MiB or less')); continue;
+    }
     if (type.startsWith('video/')) {
       if (!acceptsVideo()) { problems.push(t('This machine cannot receive videos')); continue; }
       if (![...VIDEO_TYPES.values()].includes(type) || file.size > VIDEO_MAX) {
         problems.push(t('Videos must be MP4, MOV, or WebM up to 8 MiB')); continue;
       }
       if (attachments.some(isVideo)) { problems.push(t('Each message can include one video')); continue; }
-    } else {
-      if (!type.startsWith('image/')) { problems.push(t('{name} is not an image or video', { name: file.name || t('File') })); continue; }
+    } else if (type.startsWith('image/')) {
       if (!acceptsImages()) { problems.push(t('The selected model does not accept images')); continue; }
-      if (attachments.filter(item => !isVideo(item)).length >= limit) { problems.push(t('Up to {n} images', { n: limit })); continue; }
+      if (attachments.filter(isImage).length >= limit) { problems.push(t('Up to {n} images', { n: limit })); continue; }
       if (file.size > 32 * 1024 * 1024) { problems.push(t('Image is larger than 32 MiB')); continue; }
+    } else {
+      if (!acceptsFiles()) { problems.push(t('This machine cannot receive files')); continue; }
+      if (attachments.filter(isFile).length >= 6) { problems.push(t('Attach up to 6 files per message.')); continue; }
     }
     const media = file.type === type ? file : new Blob([file], { type });
     const key = crypto.getRandomValues(new Uint32Array(4)).join('-');
@@ -1393,7 +1425,7 @@ function addMedia(files) {
   }
   if (attachments.length !== count) {
     const snapshot = attachmentRecords();
-    void draftFiles(draftKey, () => snapshot);
+    void draftFiles(draftKey, snapshot);
   }
   drawAttachments();
   setError([...new Set(problems)].join('，'));
@@ -1411,14 +1443,19 @@ function drawAttachments() {
   $('attachments').replaceChildren(...attachments.map(item => {
     const node = el('div', 'attachment');
     node.title = item.name;
-    const preview = isVideo(item) ? el('video') : el('img');
-    preview.src = item.url;
-    if (isVideo(item)) {
+    if (isFile(item)) {
+      node.classList.add('attachment-file');
+      node.append(el('span', '', item.name));
+    } else if (isVideo(item)) {
+      const preview = el('video');
+      preview.src = item.url;
       preview.preload = 'metadata';
       preview.muted = true;
       preview.playsInline = true;
       node.append(preview, el('small', 'video-badge', t('Video')));
     } else {
+      const preview = el('img');
+      preview.src = item.url;
       preview.alt = item.name;
       node.append(imageButton(preview, 'attachment-image-trigger'));
     }
@@ -1447,7 +1484,7 @@ async function prepareImage(item) {
   } finally { bitmap.close(); }
 }
 function encodeMedia(item) {
-  item.encoded ??= Promise.resolve(isVideo(item) ? item.file : prepareImage(item)).then(file => new Promise((resolve, reject) => {
+  item.encoded ??= Promise.resolve(isImage(item) ? prepareImage(item) : item.file).then(file => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const value = String(reader.result);
@@ -1803,6 +1840,13 @@ function userNode(entry) {
   if (images.length) {
     const strip = el('div', 'user-images');
     for (const image of images) {
+      if (isFile(image)) {
+        const link = el('a', 'user-file', image.name || t('File'));
+        link.href = apiUrl(image.url, session?.machine ?? machineId);
+        link.download = image.name;
+        strip.append(link);
+        continue;
+      }
       if (isVideo(image)) {
         const video = el('video', 'user-video');
         video.controls = true;
@@ -2289,7 +2333,7 @@ async function refresh(detect = false, quiet = false) {
       const snapshot = result.value;
       const previous = inventories.get(machine.id);
       const knownSessions = new Map(previous?.sessions.map(item => [item.id, item]));
-      if (!previous || ['storage', 'maxImages', 'videoInput', 'scheduling', 'sessionRenaming', 'name'].some(field => previous.machine[field] !== snapshot.machine[field])) {
+      if (!previous || ['storage', 'maxImages', 'fileInput', 'videoInput', 'scheduling', 'sessionRenaming', 'name'].some(field => previous.machine[field] !== snapshot.machine[field])) {
         redrawChrome = redrawNav = true;
       }
       machine.name = snapshot.machine.name;
@@ -3028,11 +3072,11 @@ $('file').onchange = () => { addMedia([...$('file').files]); $('file').value = '
 $('composer').addEventListener('paste', event => {
   const data = event.clipboardData;
   if (!data) return;
-  const files = [...data.files].filter(file => /^(image|video)\//.test(mediaType(file)));
+  const files = [...data.files].filter(file => acceptsFiles() || /^(image|video)\//.test(mediaType(file)));
   if (!files.length) {
     for (const item of data.items ?? []) {
       const file = item.kind === 'file' && item.getAsFile();
-      if (file && /^(image|video)\//.test(mediaType(file))) files.push(file);
+      if (file && (acceptsFiles() || /^(image|video)\//.test(mediaType(file)))) files.push(file);
     }
   }
   if (!files.length) return;
@@ -3062,7 +3106,9 @@ $('composer').onsubmit = async event => {
   const text = $('prompt').value;
   const files = attachments.slice();
   const video = files.find(isVideo);
-  const pictures = files.filter(item => !isVideo(item));
+  const pictures = files.filter(isImage);
+  const documents = files.filter(isFile);
+  if (documents.length && !acceptsFiles()) { setError(t('This machine cannot receive files')); return; }
   if (!text.trim() && !files.length) return;
   if (pictures.length && !acceptsImages()) { setError(t('The selected model does not accept images. Remove them or choose a model that does.')); return; }
   const limit = imageCountLimit();
@@ -3092,6 +3138,7 @@ $('composer').onsubmit = async event => {
       images.push(...await Promise.all(pictures.slice(offset, offset + IMAGE_ENCODING_CONCURRENCY).map(encodeMedia)));
     }
     const clip = video && await encodeMedia(video);
+    const encodedFiles = await Promise.all(documents.map(encodeMedia));
     if (generation !== selection) return;
     if (!session) {
       const created = await api('sessions', { project: destination, agent: chosenAgent }, target);
@@ -3117,7 +3164,7 @@ $('composer').onsubmit = async event => {
       retry = { session: retryKey, signature, id: Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join('') };
     }
     submission.messageId = retry.id + '-user';
-    const value = await api('sessions/' + encodeURIComponent(id) + '/send', { id: retry.id, text, ...settings, images, ...(clip && { video: clip }) }, target);
+    const value = await api('sessions/' + encodeURIComponent(id) + '/send', { id: retry.id, text, ...settings, images, ...(clip && { video: clip }), ...(encodedFiles.length && { files: encodedFiles }) }, target);
     accepted = value.session?.state === 'running';
     retry = undefined;
     const sentFiles = new Set(files.map(item => item.key));

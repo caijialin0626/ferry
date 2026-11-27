@@ -53,7 +53,10 @@ createInterface({ input: process.stdin }).on('line', async line => {
       } } });
     }
     const clipPath = /(?:^|\n)Attached video: (".*")$/.exec(text);
-    if (clipPath) {
+    const filePaths = [...text.matchAll(/^Attached file: (".*")$/gm)].map(match => JSON.parse(match[1]));
+    if (filePaths.length) {
+      update('File bytes: ' + filePaths.map(path => fs.readFileSync(path).length).join(', '));
+    } else if (clipPath) {
       const clip = fs.readFileSync(JSON.parse(clipPath[1]));
       assert.equal(clip.toString('ascii', 4, 8), 'ftyp');
       update('Read MP4: ' + clip.length + ' bytes, ' + images.length + ' images.');
