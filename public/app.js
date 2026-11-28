@@ -3635,6 +3635,8 @@ $('nav').addEventListener('keydown', event => {
   const view = window.visualViewport;
   const root = document.documentElement;
   const portraitQuery = matchMedia('(orientation: portrait)');
+  const isStandalone = Boolean(window.navigator.standalone || matchMedia('(display-mode: standalone)').matches);
+  if (isStandalone) root.classList.add('standalone');
   let pendingFrame = 0;
   let keepBottom = false;
   let rotatingUntil = 0;
@@ -3643,10 +3645,24 @@ $('nav').addEventListener('keydown', event => {
     for (const id of settleTimers) clearTimeout(id);
     settleTimers = [];
   };
+  const standaloneHeight = () => {
+    if (!isStandalone) return 0;
+    const sw = Math.min(screen.width || 0, screen.height || 0);
+    const sh = Math.max(screen.width || 0, screen.height || 0);
+    const iw = window.innerWidth;
+    const ih = window.innerHeight;
+    let full = 0;
+    if (sw > 0 && Math.abs(iw - sw) <= 4) full = sh;
+    else if (sh > 0 && Math.abs(iw - sh) <= 4) full = sw;
+    return full > ih && full - ih <= 160 ? Math.round(full) : 0;
+  };
   const resetShell = () => {
     root.classList.remove('kb-open');
     root.style.removeProperty('--vvh');
     root.style.removeProperty('--vvt');
+    const fullH = standaloneHeight();
+    if (fullH) root.style.setProperty('--standalone-h', fullH + 'px');
+    else root.style.removeProperty('--standalone-h');
     if (document.documentElement.scrollTop) document.documentElement.scrollTop = 0;
     if (document.body.scrollTop) document.body.scrollTop = 0;
     if (window.scrollY || window.scrollX || view?.offsetTop || view?.offsetLeft) window.scrollTo(0, 0);
