@@ -3578,26 +3578,63 @@ $('nav').addEventListener('keydown', event => {
 /* Track the visual viewport so the composer stays above on-screen keyboards (iOS ignores interactive-widget). */
 {
   const view = window.visualViewport;
+  const root = document.documentElement;
+  let pendingFrame = 0;
+  let keepBottom = false;
+  let settleTimers = [];
+  const clearSettle = () => {
+    for (const id of settleTimers) clearTimeout(id);
+    settleTimers = [];
+  };
+  const resetShell = () => {
+    root.style.removeProperty('--vvh');
+    root.style.removeProperty('--vvt');
+    if (window.scrollY || window.scrollX || view?.offsetTop || view?.offsetLeft) window.scrollTo(0, 0);
+  };
+  const sync = () => {
+    pendingFrame = 0;
+    const follow = keepBottom;
+    keepBottom = false;
+    if (!view) { resetShell(); return; }
+    if (Math.abs(view.scale - 1) > 0.01) return; // pinch-zoom: leave layout alone
+    const keyboardGap = Math.max(0, window.innerHeight - view.height);
+    const editing = Boolean(document.activeElement?.matches('input, textarea, [contenteditable]'));
+    if (!editing && keyboardGap < 80) {
+      resetShell();
+    } else if (keyboardGap >= 40) {
+      const top = Math.max(0, Math.min(Math.round(view.offsetTop), Math.round(keyboardGap)));
+      root.style.setProperty('--vvh', Math.round(view.height) + 'px');
+      root.style.setProperty('--vvt', top + 'px');
+    } else {
+      resetShell();
+    }
+    if (follow && stick && !$('conversation').hidden) scrollToLatest();
+  };
+  const queue = () => {
+    keepBottom ||= stick && atBottom(); // measured before the shell is resized
+    if (!pendingFrame) pendingFrame = requestAnimationFrame(sync);
+  };
+  const onOrientation = () => {
+    clearSettle();
+    resetShell();
+    applySideWidth();
+    fitPrompt();
+    queue();
+    for (const ms of [120, 320, 600]) {
+      settleTimers.push(setTimeout(() => { applySideWidth(); fitPrompt(); queue(); }, ms));
+    }
+  };
   if (view) {
-    let pendingFrame = 0;
-    let keepBottom = false;
-    const sync = () => {
-      pendingFrame = 0;
-      const follow = keepBottom;
-      keepBottom = false;
-      if (Math.abs(view.scale - 1) > 0.01) return; // pinch-zoom: leave layout alone
-      document.documentElement.style.setProperty('--vvh', Math.round(view.height) + 'px');
-      document.documentElement.style.setProperty('--vvt', Math.round(view.offsetTop) + 'px');
-      if (follow && stick && !$('conversation').hidden) scrollToLatest();
-    };
-    const queue = () => {
-      keepBottom ||= stick && atBottom(); // measured before the shell is resized
-      if (!pendingFrame) pendingFrame = requestAnimationFrame(sync);
-    };
     view.addEventListener('resize', queue);
     view.addEventListener('scroll', queue);
-    sync();
   }
+  window.addEventListener('resize', queue);
+  window.addEventListener('orientationchange', onOrientation);
+  screen.orientation?.addEventListener?.('change', onOrientation);
+  window.addEventListener('pageshow', onOrientation);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') onOrientation(); });
+  document.addEventListener('focusout', () => { settleTimers.push(setTimeout(queue, 120)); });
+  sync();
 }
 document.addEventListener('click', event => {
   if (menuFor && !event.target.closest('.menu, .more')) { menuFor = ''; drawNav(); }
