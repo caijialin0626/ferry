@@ -3575,35 +3575,42 @@ $('nav').addEventListener('keydown', event => {
   event.preventDefault();
   items[next]?.focus();
 });
-/* Track the visual viewport so the composer stays above on-screen keyboards (iOS ignores interactive-widget). */
+/* Track the visual viewport so the composer stays above on-screen keyboards and iOS standalone PWA rotations never leave stale offsets. */
 {
   const view = window.visualViewport;
   const root = document.documentElement;
+  const portraitQuery = matchMedia('(orientation: portrait)');
   let pendingFrame = 0;
   let keepBottom = false;
+  let rotatingUntil = 0;
   let settleTimers = [];
   const clearSettle = () => {
     for (const id of settleTimers) clearTimeout(id);
     settleTimers = [];
   };
   const resetShell = () => {
-    root.style.removeProperty('--vvh');
-    root.style.removeProperty('--vvt');
+    const height = Math.round(window.innerHeight);
+    if (height > 0) root.style.setProperty('--vvh', height + 'px');
+    else root.style.removeProperty('--vvh');
+    root.style.setProperty('--vvt', '0px');
+    if (document.documentElement.scrollTop) document.documentElement.scrollTop = 0;
+    if (document.body.scrollTop) document.body.scrollTop = 0;
     if (window.scrollY || window.scrollX || view?.offsetTop || view?.offsetLeft) window.scrollTo(0, 0);
   };
   const sync = () => {
     pendingFrame = 0;
     const follow = keepBottom;
     keepBottom = false;
+    const rotating = Date.now() < rotatingUntil;
     if (!view) { resetShell(); return; }
-    if (Math.abs(view.scale - 1) > 0.01) return; // pinch-zoom: leave layout alone
-    const keyboardGap = Math.max(0, window.innerHeight - view.height);
+    if (!rotating && Math.abs(view.scale - 1) > 0.02) return; // user pinch-zoom: leave layout alone
+    const innerH = window.innerHeight;
+    const viewH = view.height;
+    const keyboardGap = Math.max(0, innerH - viewH);
     const editing = Boolean(document.activeElement?.matches('input, textarea, [contenteditable]'));
-    if (!editing && keyboardGap < 80) {
-      resetShell();
-    } else if (keyboardGap >= 40) {
+    if (!rotating && editing && keyboardGap >= 80) {
       const top = Math.max(0, Math.min(Math.round(view.offsetTop), Math.round(keyboardGap)));
-      root.style.setProperty('--vvh', Math.round(view.height) + 'px');
+      root.style.setProperty('--vvh', Math.round(viewH) + 'px');
       root.style.setProperty('--vvt', top + 'px');
     } else {
       resetShell();
@@ -3616,12 +3623,18 @@ $('nav').addEventListener('keydown', event => {
   };
   const onOrientation = () => {
     clearSettle();
+    rotatingUntil = Date.now() + 900;
     resetShell();
     applySideWidth();
     fitPrompt();
     queue();
-    for (const ms of [120, 320, 600]) {
-      settleTimers.push(setTimeout(() => { applySideWidth(); fitPrompt(); queue(); }, ms));
+    for (const ms of [60, 200, 450, 800]) {
+      settleTimers.push(setTimeout(() => {
+        resetShell();
+        applySideWidth();
+        fitPrompt();
+        queue();
+      }, ms));
     }
   };
   if (view) {
@@ -3631,9 +3644,10 @@ $('nav').addEventListener('keydown', event => {
   window.addEventListener('resize', queue);
   window.addEventListener('orientationchange', onOrientation);
   screen.orientation?.addEventListener?.('change', onOrientation);
+  portraitQuery.addEventListener?.('change', onOrientation);
   window.addEventListener('pageshow', onOrientation);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') onOrientation(); });
-  document.addEventListener('focusout', () => { settleTimers.push(setTimeout(queue, 120)); });
+  document.addEventListener('focusout', () => { settleTimers.push(setTimeout(queue, 140)); });
   sync();
 }
 document.addEventListener('click', event => {
