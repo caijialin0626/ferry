@@ -2,15 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Ferry">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfbfa">
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#171b19">
   <title>Ferry</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <link rel="stylesheet" href="/style.css?v=20261128">
   <script src="/vendor/markdown-it.min.js"></script>
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="/app.js?v=20261128"></script>
 </head>
 <body>
   <p id="connection-status" class="connection-status" role="status" hidden></p>
@@ -39,9 +44,11 @@
         <button id="collapse" class="icon-btn" type="button" aria-label="Collapse sidebar" title="Collapse sidebar" aria-controls="sidebar"><span data-icon="sidebar"></span></button>
       </div>
       <div class="side-actions">
-        <button id="new-chat" class="side-action" type="button" aria-label="New chat" title="New chat (Ctrl/⌘ + Shift + O)"><span data-icon="compose"></span><span>New chat</span></button>
-        <button id="new-project" class="side-action" type="button" aria-label="New project" title="New project" aria-haspopup="dialog"><span data-icon="folder-plus"></span><span>New project</span></button>
-        <button id="quick-open" class="side-action" type="button" aria-label="Quick switch" aria-haspopup="dialog" hidden><span data-icon="search"></span><span>Quick switch</span><kbd id="quick-open-kbd" class="side-kbd" aria-hidden="true"></kbd></button>
+        <button id="quick-open" class="side-action side-search" type="button" aria-label="Quick switch" aria-haspopup="dialog" hidden><span data-icon="search"></span><span>Quick switch</span><kbd id="quick-open-kbd" class="side-kbd" aria-hidden="true"></kbd></button>
+        <div class="side-action-row">
+          <button id="new-chat" class="side-action" type="button" aria-label="New chat" title="New chat (Ctrl/⌘ + Shift + O)"><span data-icon="compose"></span><span>New chat</span></button>
+          <button id="new-project" class="side-action" type="button" aria-label="New project" title="New project" aria-haspopup="dialog"><span data-icon="folder-plus"></span><span>New project</span></button>
+        </div>
       </div>
       <nav id="nav" class="nav" aria-label="Projects and chats"></nav>
       <div class="machine">
