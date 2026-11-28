@@ -3,6 +3,42 @@ import { languages, locale, savedLanguage, setLanguage, t, translatePage, transl
 
 translatePage();
 
+const FONT_SIZE_KEY = 'ferry.fontSize';
+const FONT_SIZES = ['sm', 'md', 'lg', 'xl'];
+function savedFontSize() {
+  try {
+    const value = localStorage.getItem(FONT_SIZE_KEY);
+    return FONT_SIZES.includes(value) ? value : 'md';
+  } catch { return 'md'; }
+}
+let currentFontSize = savedFontSize();
+function applyFontSize(size, persist = true) {
+  const next = FONT_SIZES.includes(size) ? size : 'md';
+  currentFontSize = next;
+  if (next === 'md') delete document.documentElement.dataset.fontSize;
+  else document.documentElement.dataset.fontSize = next;
+  if (persist) {
+    try {
+      if (next === 'md') localStorage.removeItem(FONT_SIZE_KEY);
+      else localStorage.setItem(FONT_SIZE_KEY, next);
+    } catch { /* Storage can be disabled. */ }
+  }
+  drawFontSizeSettings();
+}
+function drawFontSizeSettings() {
+  const group = document.getElementById('font-size-group');
+  if (!group) return;
+  for (const button of group.querySelectorAll('[data-font-size]')) {
+    const selected = button.dataset.fontSize === currentFontSize;
+    button.setAttribute('aria-checked', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  }
+}
+applyFontSize(currentFontSize, false);
+window.addEventListener('storage', event => {
+  if (event.key === FONT_SIZE_KEY) applyFontSize(savedFontSize(), false);
+});
+
 const $ = id => document.getElementById(id);
 
 /* ---------- icons (inline SVG via DOM, CSP-safe) ---------- */
@@ -2658,6 +2694,7 @@ function selectSettingsTab(tab = 'general') {
   $('settings-panel-title').textContent = t(settingsTabTitles[settingsTab]);
   if (settingsTab === 'general') {
     if ($('general-setting-status')) $('general-setting-status').textContent = '';
+    drawFontSizeSettings();
     drawNotificationSettings();
   } else if (settingsTab === 'machines') {
     drawMachines();
@@ -2697,6 +2734,24 @@ settingsDialog.querySelector('.settings-nav')?.addEventListener('keydown', event
 $('language').replaceChildren(new Option(t('Automatic'), ''), ...languages.map(([id, name]) => new Option(name, id)));
 $('language').value = savedLanguage();
 $('language').onchange = () => setLanguage($('language').value);
+if ($('font-size-group')) {
+  const group = $('font-size-group');
+  for (const button of group.querySelectorAll('[data-font-size]')) {
+    button.addEventListener('click', () => applyFontSize(button.dataset.fontSize));
+  }
+  group.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+    const buttons = [...group.querySelectorAll('[data-font-size]')];
+    const index = buttons.indexOf(event.target.closest('[data-font-size]'));
+    if (index < 0) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+      : (index + (['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1) + buttons.length) % buttons.length;
+    applyFontSize(buttons[next].dataset.fontSize);
+    buttons[next].focus();
+  });
+  drawFontSizeSettings();
+}
 $('scan-machines').onclick = async () => {
   const button = $('scan-machines');
   const result = $('machine-scan-result');
@@ -3589,10 +3644,9 @@ $('nav').addEventListener('keydown', event => {
     settleTimers = [];
   };
   const resetShell = () => {
-    const height = Math.round(window.innerHeight);
-    if (height > 0) root.style.setProperty('--vvh', height + 'px');
-    else root.style.removeProperty('--vvh');
-    root.style.setProperty('--vvt', '0px');
+    root.classList.remove('kb-open');
+    root.style.removeProperty('--vvh');
+    root.style.removeProperty('--vvt');
     if (document.documentElement.scrollTop) document.documentElement.scrollTop = 0;
     if (document.body.scrollTop) document.body.scrollTop = 0;
     if (window.scrollY || window.scrollX || view?.offsetTop || view?.offsetLeft) window.scrollTo(0, 0);
@@ -3608,8 +3662,9 @@ $('nav').addEventListener('keydown', event => {
     const viewH = view.height;
     const keyboardGap = Math.max(0, innerH - viewH);
     const editing = Boolean(document.activeElement?.matches('input, textarea, [contenteditable]'));
-    if (!rotating && editing && keyboardGap >= 80) {
+    if (!rotating && editing && keyboardGap >= 140) {
       const top = Math.max(0, Math.min(Math.round(view.offsetTop), Math.round(keyboardGap)));
+      root.classList.add('kb-open');
       root.style.setProperty('--vvh', Math.round(viewH) + 'px');
       root.style.setProperty('--vvt', top + 'px');
     } else {

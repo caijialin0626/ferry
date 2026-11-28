@@ -13,9 +13,9 @@
   <title>Ferry</title>
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
-  <link rel="stylesheet" href="/style.css?v=20261128">
+  <link rel="stylesheet" href="/style.css?v=20261128b">
   <script src="/vendor/markdown-it.min.js"></script>
-  <script type="module" src="/app.js?v=20261128"></script>
+  <script type="module" src="/app.js?v=20261128b"></script>
 </head>
 <body>
   <p id="connection-status" class="connection-status" role="status" hidden></p>
@@ -283,6 +283,18 @@
                 <small>Choose the display language for Ferry.</small>
               </div>
               <select id="language" data-select-label="Language"></select>
+            </div>
+            <div class="settings-row">
+              <div class="settings-copy">
+                <strong id="font-size-label">Text size</strong>
+                <small>Adjust reading and interface text size.</small>
+              </div>
+              <div id="font-size-group" class="segmented" role="radiogroup" aria-labelledby="font-size-label">
+                <button type="button" class="segmented-option" role="radio" data-font-size="sm" aria-checked="false">Small</button>
+                <button type="button" class="segmented-option" role="radio" data-font-size="md" aria-checked="true">Standard</button>
+                <button type="button" class="segmented-option" role="radio" data-font-size="lg" aria-checked="false">Large</button>
+                <button type="button" class="segmented-option" role="radio" data-font-size="xl" aria-checked="false">Extra large</button>
+              </div>
             </div>
             <div class="settings-row">
               <div class="settings-copy">
